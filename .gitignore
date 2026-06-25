@@ -1,0 +1,12 @@
+# 개인 금융 데이터 / 스크린샷 제외 (공개 레포 안전)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.xlsx
+*.xls
+*.csv
+
+# OS / 에디터
+Thumbs.db
+.DS_Store
