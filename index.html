@@ -118,6 +118,7 @@
   <button class="tool" onclick="loadDemo()">🎲 샘플 데이터</button>
   <button class="tool warn" onclick="resetAll()">🗑 초기화</button>
   <input type="file" id="xlsxfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcel(event)">
+  <input type="file" id="catfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importCategoryFile(event)">
 </header>
 
 <nav id="tabs"></nav>
@@ -145,6 +146,7 @@ const TABS = [
   {id:"invest",    name:"투자자산"},
   {id:"pension",   name:"연금보험"},
   {id:"maturity",  name:"동산만기"},
+  {id:"pivot",     name:"피벗분석"},
 ];
 
 /* ---- 드롭다운 옵션 ---- */
@@ -230,7 +232,7 @@ function render(){
   const c=document.getElementById("content");
   ({summary:rSummary, cashflow_t:rCashTable, input:rInput, cashflow:rCashflow,
     dongsan:rDongsan, budongsan:rBudongsan, invest:rInvest, pension:rPension,
-    maturity:rMaturity}[curTab])(c);
+    maturity:rMaturity, pivot:rPivot}[curTab])(c);
 }
 
 /* ---------- 요약 (대시보드) ---------- */
@@ -336,6 +338,7 @@ function rInput(c){
   c.innerHTML=`
   <h2 class="sec">📝 동산 입력창</h2>
   <p class="sub">예금·적금 등 동산 자산을 등록/수정합니다. (저장 시 '동산' 및 '동산만기' 탭에 자동 반영)</p>
+  <div class="toolbar">${tbUpload("동산")}</div>
   <div class="panels">
     ${formPanel("new","신규 입력 모드","신규",{})}
     <div class="panel">
@@ -403,7 +406,7 @@ function rCashflow(c){
   c.innerHTML=`
   <h2 class="sec">💵 현금흐름</h2>
   <p class="sub">수입·지출 내역을 기록합니다.</p>
-  <div class="toolbar"><button class="addbtn" onclick="cashForm()">＋ 내역 추가</button></div>
+  <div class="toolbar"><button class="addbtn" onclick="cashForm()">＋ 내역 추가</button>${tbUpload("현금흐름")}</div>
   ${rows.length?`<div class="tablewrap"><table>
     <thead><tr><th>일자</th><th>구분</th><th>분류</th><th>내용</th><th class="num">금액</th><th>명의자</th><th></th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
@@ -423,7 +426,7 @@ function rDongsan(c){
   c.innerHTML=`
   <h2 class="sec">🏦 동산 (예·적금)</h2>
   <p class="sub">현금성 자산 목록. 등록/수정은 '동산 입력창' 탭에서.</p>
-  <div class="toolbar"><button class="addbtn" onclick="go('input')">＋ 동산 입력창으로</button></div>
+  <div class="toolbar"><button class="addbtn" onclick="go('input')">＋ 동산 입력창으로</button>${tbUpload("동산")}</div>
   ${rows.length?`<div class="tablewrap"><table>
     <thead><tr><th>투자구분</th><th>금융기관</th><th>상세</th><th>명의자</th><th>세금</th><th>상태</th>
       <th class="num">예치금액</th><th>시작일</th><th class="num">개월</th><th class="num">금리</th><th></th></tr></thead>
@@ -447,7 +450,7 @@ function rBudongsan(c){
   c.innerHTML=`
   <h2 class="sec">🏠 부동산</h2>
   <p class="sub">부동산 자산 및 담보대출 현황.</p>
-  <div class="toolbar"><button class="addbtn" onclick="genForm('부동산')">＋ 부동산 추가</button></div>
+  <div class="toolbar"><button class="addbtn" onclick="genForm('부동산')">＋ 부동산 추가</button>${tbUpload("부동산")}</div>
   ${rows.length?`<div class="tablewrap"><table>
     <thead><tr><th>종류</th><th>소재지</th><th>명의자</th><th class="num">취득가</th><th class="num">현재가</th>
       <th class="num">대출</th><th class="num">순자산</th><th>취득일</th><th></th></tr></thead>
@@ -472,7 +475,7 @@ function rInvest(c){
   c.innerHTML=`
   <h2 class="sec">📈 투자자산</h2>
   <p class="sub">주식·펀드·ETF·코인 등 투자 포트폴리오.</p>
-  <div class="toolbar"><button class="addbtn" onclick="genForm('투자자산')">＋ 종목 추가</button></div>
+  <div class="toolbar"><button class="addbtn" onclick="genForm('투자자산')">＋ 종목 추가</button>${tbUpload("투자자산")}</div>
   ${rows.length?`<div class="tablewrap"><table>
     <thead><tr><th>종류</th><th>종목명</th><th>계좌</th><th>명의자</th><th class="num">수량</th>
       <th class="num">매입가</th><th class="num">현재가</th><th class="num">평가금액</th><th class="num">손익</th><th></th></tr></thead>
@@ -495,7 +498,7 @@ function rPension(c){
   c.innerHTML=`
   <h2 class="sec">🛡 연금/보험</h2>
   <p class="sub">연금저축·IRP·보험 납입 현황 및 예상 수령액.</p>
-  <div class="toolbar"><button class="addbtn" onclick="genForm('연금보험')">＋ 상품 추가</button></div>
+  <div class="toolbar"><button class="addbtn" onclick="genForm('연금보험')">＋ 상품 추가</button>${tbUpload("연금보험")}</div>
   ${rows.length?`<div class="tablewrap"><table>
     <thead><tr><th>종류</th><th>상품명</th><th>보험/금융사</th><th>명의자</th><th class="num">월납입</th>
       <th>납입기간</th><th class="num">납입누계</th><th class="num">예상수령액</th><th>개시일</th><th></th></tr></thead>
@@ -693,6 +696,147 @@ function loadDemo(){
     {id:uid(),일자:ym+"-20",구분:"지출",분류:"저축/투자",내용:"적금 자동이체",금액:500000,명의자:"엄마"}
   );
   save(); render(); toast("🎲 샘플 데이터 추가됨");
+}
+
+/* ========================== 탭별 엑셀 업로드 / 양식 ========================== */
+function tbUpload(cat){
+  return `<button class="addbtn" style="background:#fff;color:var(--sky-d);border:1px solid var(--sky-d)" onclick="uploadTo('${cat}')">📥 엑셀 업로드</button>
+  <button class="addbtn" style="background:#fff;color:var(--muted);border:1px solid #c9d4dc" onclick="downloadTemplate('${cat}')">📄 양식 다운로드</button>
+  <span style="color:var(--muted);font-size:11px">헤더가 있는 엑셀/CSV를 올리면 이 탭에 추가됩니다</span>`;
+}
+function catHeaders(cat){
+  if(cat==="동산") return ["투자구분","세금여부","명의자","금융기관","금융기관상세","계좌상태","예치금액","시작일","개월","금리","메모"];
+  return (FORMDEF[cat]||[]).map(d=>d[0]);
+}
+let uploadCat=null;
+function uploadTo(cat){ uploadCat=cat; document.getElementById("catfile").click(); }
+function importCategoryFile(ev){
+  const file=ev.target.files[0], cat=uploadCat;
+  if(!file||!cat){ ev.target.value=""; return; }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array",cellDates:true});
+      const sn = wb.SheetNames.find(n=>SHEET_MAP[n.trim()]===cat) || wb.SheetNames[0];
+      const json=XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:"",raw:false});
+      let added=0;
+      json.forEach(row=>{
+        const o={id:uid()}; let has=false;
+        Object.entries(row).forEach(([k,v])=>{
+          if(v==="") return;
+          o[normField(cat,k)] = (v instanceof Date)? v.toISOString().slice(0,10) : v;
+          has=true;
+        });
+        if(has){ DATA[cat].push(o); added++; }
+      });
+      save(); render();
+      toast(added?`📥 '${cat}' 탭에 ${added}건 추가 (시트: ${sn})`:"가져올 데이터가 없습니다");
+    }catch(err){ alert("업로드 실패: "+err.message); }
+    ev.target.value=""; uploadCat=null;
+  };
+  reader.readAsArrayBuffer(file);
+}
+function downloadTemplate(cat){
+  const ws=XLSX.utils.aoa_to_sheet([catHeaders(cat)]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,cat);
+  XLSX.writeFile(wb,`${cat}_양식.xlsx`);
+  toast(`📄 ${cat} 양식 다운로드`);
+}
+
+/* ========================== 피벗분석 ========================== */
+let pv={cat:"동산", row:"명의자", col:"투자구분", val:"예치금액", agg:"합계"};
+function pivotFields(cat){
+  const set=new Set();
+  (DATA[cat]||[]).forEach(r=>Object.keys(r).forEach(k=>{ if(k!=="id") set.add(k); }));
+  catHeaders(cat).forEach(h=>set.add(h));
+  return [...set];
+}
+function rPivot(c){
+  const cats=Object.keys(DATA);
+  const fields=pivotFields(pv.cat);
+  if(!fields.includes(pv.row)) pv.row=fields[0]||"";
+  if(pv.col && !fields.includes(pv.col)) pv.col="";
+  if(pv.val && !fields.includes(pv.val)) pv.val="";
+  c.innerHTML=`
+  <h2 class="sec">📐 피벗분석</h2>
+  <p class="sub">엑셀 피벗테이블처럼 행·열·값을 골라 자산을 집계합니다.</p>
+  <div class="toolbar">
+    <label>데이터</label>
+    <select onchange="pv.cat=this.value;pv.row='';pv.col='';pv.val='';render()">
+      ${cats.map(k=>`<option ${k===pv.cat?'selected':''}>${k}</option>`).join("")}</select>
+    <label>행</label>
+    <select onchange="pv.row=this.value;render()">${fields.map(f=>`<option ${f===pv.row?'selected':''}>${f}</option>`).join("")}</select>
+    <label>열</label>
+    <select onchange="pv.col=this.value;render()"><option value="">— 없음 —</option>${fields.map(f=>`<option ${f===pv.col?'selected':''}>${f}</option>`).join("")}</select>
+    <label>값</label>
+    <select onchange="pv.val=this.value;render()"><option value="">(건수)</option>${fields.map(f=>`<option ${f===pv.val?'selected':''}>${f}</option>`).join("")}</select>
+    <label>집계</label>
+    <select onchange="pv.agg=this.value;render()">${["합계","개수","평균","최대","최소"].map(a=>`<option ${a===pv.agg?'selected':''}>${a}</option>`).join("")}</select>
+    <button class="addbtn" onclick="exportPivot()">📤 피벗 내보내기</button>
+  </div>
+  ${renderPivotTable()}`;
+}
+function aggregate(vals,agg){
+  if(agg==="개수") return vals.length;
+  const nums=vals.map(v=>num(v));
+  if(!nums.length) return 0;
+  if(agg==="합계") return nums.reduce((a,b)=>a+b,0);
+  if(agg==="평균") return nums.reduce((a,b)=>a+b,0)/nums.length;
+  if(agg==="최대") return Math.max(...nums);
+  if(agg==="최소") return Math.min(...nums);
+  return 0;
+}
+function pivotData(){
+  const recs=DATA[pv.cat]||[];
+  const rowKeys=[...new Set(recs.map(r=>r[pv.row]||"(없음)"))].sort();
+  const colKeys = pv.col ? [...new Set(recs.map(r=>r[pv.col]||"(없음)"))].sort() : [null];
+  const cell={};
+  rowKeys.forEach(rk=>{ cell[rk]={}; colKeys.forEach(ck=>cell[rk][ck]=[]); });
+  recs.forEach(r=>{
+    const rk=r[pv.row]||"(없음)", ck = pv.col ? (r[pv.col]||"(없음)") : null;
+    const v = pv.val ? r[pv.val] : 1;
+    if(cell[rk] && cell[rk][ck]) cell[rk][ck].push(v);
+  });
+  return {rowKeys,colKeys,cell};
+}
+const fmtPv = v => Math.round(v).toLocaleString("ko-KR");
+function renderPivotTable(){
+  const recs=DATA[pv.cat]||[];
+  if(!recs.length) return emptyBox(`'${pv.cat}' 데이터가 없습니다. 해당 탭에서 입력하거나 엑셀을 업로드하세요.`);
+  const {rowKeys,colKeys,cell}=pivotData();
+  const colLabel=c=>c==null?(pv.val||"건수"):c;
+  let head=`<th>${esc(pv.row)}</th>`+colKeys.map(c=>`<th class="num">${esc(colLabel(c))}</th>`).join("")+`<th class="num">합계</th>`;
+  let body="", colTotals={};
+  colKeys.forEach(c=>colTotals[c]=[]);
+  rowKeys.forEach(rk=>{
+    let rowVals=[];
+    const tds=colKeys.map(ck=>{
+      const arr=cell[rk][ck]||[]; rowVals=rowVals.concat(arr); colTotals[ck]=colTotals[ck].concat(arr);
+      return `<td class="num">${arr.length?fmtPv(aggregate(arr,pv.agg)):'-'}</td>`;
+    }).join("");
+    body+=`<tr><td>${esc(rk)}</td>${tds}<td class="num" style="font-weight:700">${fmtPv(aggregate(rowVals,pv.agg))}</td></tr>`;
+  });
+  let allVals=[];
+  const foot=colKeys.map(ck=>{ allVals=allVals.concat(colTotals[ck]); return `<td class="num">${fmtPv(aggregate(colTotals[ck],pv.agg))}</td>`; }).join("");
+  return `<div class="tablewrap"><table>
+    <thead><tr>${head}</tr></thead><tbody>${body}</tbody>
+    <tfoot><tr><td>합계</td>${foot}<td class="num">${fmtPv(aggregate(allVals,pv.agg))}</td></tr></tfoot></table></div>
+    <p class="sub" style="margin-top:10px">📊 <b>${esc(pv.val||'건수')}</b> 의 <b>${pv.agg}</b> · 데이터원본: <b>${pv.cat}</b> (${recs.length}건)${pv.val?'':' · 값을 비우면 건수를 셉니다'}</p>`;
+}
+function exportPivot(){
+  const {rowKeys,colKeys,cell}=pivotData();
+  const colLabel=c=>c==null?(pv.val||"건수"):c;
+  const aoa=[[pv.row,...colKeys.map(colLabel),"합계"]];
+  rowKeys.forEach(rk=>{
+    let rowVals=[]; const row=[rk];
+    colKeys.forEach(ck=>{ const arr=cell[rk][ck]||[]; rowVals=rowVals.concat(arr); row.push(arr.length?Math.round(aggregate(arr,pv.agg)):""); });
+    row.push(Math.round(aggregate(rowVals,pv.agg))); aoa.push(row);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(aoa), wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"피벗");
+  XLSX.writeFile(wb,`피벗_${pv.cat}.xlsx`);
+  toast("📤 피벗 내보내기 완료");
 }
 
 /* ========================== 시작 ========================== */
