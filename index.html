@@ -114,7 +114,7 @@
   <span style="font-size:11.5px;opacity:.85">Excel 매크로 → 웹 버전</span>
   <span class="spacer"></span>
   <button class="tool" onclick="document.getElementById('xlsxfile').click()">📥 엑셀 가져오기</button>
-  <button class="tool" onclick="exportExcel()">📤 엑셀 내보내기</button>
+  <button class="tool" onclick="exportExcel()">📤 엑셀 백업</button>
   <button class="tool" onclick="loadDemo()">🎲 샘플 데이터</button>
   <button class="tool warn" onclick="resetAll()">🗑 초기화</button>
   <span id="authbox" style="display:flex;align-items:center;gap:8px"></span>
@@ -663,8 +663,9 @@ function exportExcel(){
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(clean.length?clean:[{}]),name);
   });
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(mat.length?mat:[{}]),"동산만기");
-  XLSX.writeFile(wb,"자산관리_내보내기.xlsx");
-  toast("📤 엑셀 내보내기 완료");
+  const stamp=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`자산관리_백업_${stamp}.xlsx`);
+  toast("📤 백업 엑셀 저장 완료 ("+stamp+")");
 }
 
 /* ========================== 초기화 / 샘플 ========================== */
