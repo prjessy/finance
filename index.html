@@ -663,25 +663,26 @@ function ipoPill(s){ return s==="상장"||s==="매도완료"?"ok":s==="배정"?"
 function rIPO(c){
   const cat="공모주";
   const rows=processRows(cat,DATA.공모주||[]);
-  const evs=[];
-  (DATA.공모주||[]).forEach(r=>{
-    [["청약일","청약","var(--sky-d)"],["환불일","환불","var(--amber)"],["상장일","상장","var(--green)"]].forEach(([f,lab,col])=>{
-      if(r[f]){ const d=daysUntil(r[f]); if(d!=null&&d>=-7&&d<=120) evs.push({date:r[f],d,lab,col,종목:r.종목,주관사:r.주관사,공모가:r.공모가}); }
-    });
-  });
-  evs.sort((a,b)=>a.date.localeCompare(b.date));
+  const dd=(d)=>{ if(!d) return '<span style="color:var(--muted)">-</span>'; const x=daysUntil(d); return `${d} <span style="color:var(--muted)">(${x==null?'':x<0?'지남':'D-'+x})</span>`; };
+  const ipos=(DATA.공모주||[]).filter(r=>{ const last=r.상장일||r.환불일||r.청약일; return last? (daysUntil(last)>=-30) : true; })
+    .sort((a,b)=>(a.청약일||a.상장일||"").localeCompare(b.청약일||b.상장일||""));
   c.innerHTML=`
   <h2 class="sec">🎟 공모주 (IPO)</h2>
   <p class="sub">공모주 청약 일정·종목·주관사·공모가 관리. 청약일·환불일·상장일은 캘린더·알림에도 반영됩니다.</p>
   <div class="toolbar"><button class="addbtn" onclick="genForm('공모주')">＋ 공모주 추가</button>${tbUpload("공모주")}${searchBar(cat)}</div>
 
-  <div class="chartbox" style="margin-bottom:18px"><div class="lbl">📅 청약 캘린더 (다가오는 일정)</div>
-    ${evs.length?`<div style="margin-top:8px">${evs.map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
-      <span class="pill" style="background:${e.col};color:#fff">${e.d<0?'지남':'D-'+e.d}</span>
-      <span style="width:92px;color:var(--muted);font-size:11.5px">${e.date}</span>
-      <span style="font-weight:700">${esc(e.종목)}</span>
-      <span style="color:var(--muted);font-size:12px">${esc(e.주관사||'')}</span>
-      <span style="margin-left:auto;font-size:12px">${e.공모가?'공모가 '+won(e.공모가):''} · <b>${e.lab}</b></span></div>`).join("")}</div>`
+  <div class="chartbox" style="margin-bottom:18px"><div class="lbl">📅 청약 캘린더 (청약일·환불일·상장일)</div>
+    ${ipos.length?`<div style="margin-top:8px">${ipos.map(r=>`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px">
+        <b>${esc(r.종목)}</b><span style="color:var(--muted);font-size:12px">${esc(r.주관사||'')}</span>
+        ${r.상태?`<span class="pill ${ipoPill(r.상태)}">${esc(r.상태)}</span>`:''}
+        ${r.공모가?`<span style="margin-left:auto;font-size:12px">공모가 ${won(r.공모가)}</span>`:''}
+      </div>
+      <div style="font-size:12px;display:flex;gap:18px;flex-wrap:wrap">
+        <span>🟦 청약 ${dd(r.청약일)}</span>
+        <span>🟨 환불 ${dd(r.환불일)}</span>
+        <span>🟩 <b>상장 ${dd(r.상장일)}</b></span>
+      </div></div>`).join("")}</div>`
       :'<p class="empty">예정된 청약 일정이 없습니다. 공모주를 추가하세요.</p>'}
   </div>
 
