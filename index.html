@@ -28,11 +28,17 @@
   .tool:hover{background:rgba(255,255,255,.32)}
   .tool.warn:hover{background:var(--red);border-color:var(--red)}
   /* ---- tabs ---- */
-  nav{display:flex;flex-wrap:wrap;background:#fff;border-bottom:2px solid var(--sky);padding:0 10px}
-  nav button{border:none;background:none;padding:11px 16px;cursor:pointer;font-size:13px;
-             color:var(--muted);border-bottom:3px solid transparent;font-weight:600}
-  nav button:hover{color:var(--ink);background:var(--sky-l)}
-  nav button.active{color:var(--sky-d);border-bottom-color:var(--sky-d)}
+  nav{display:block;background:#fff;border-bottom:2px solid var(--sky)}
+  .grouprow{display:flex;flex-wrap:wrap;background:var(--sky-l);padding:0 8px}
+  .grouprow button{border:none;background:none;padding:11px 18px;cursor:pointer;font-size:13.5px;
+             color:var(--muted);border-bottom:3px solid transparent;font-weight:700}
+  .grouprow button.active{color:var(--sky-d);border-bottom-color:var(--sky-d);background:#fff}
+  .subrow{display:flex;flex-wrap:wrap;padding:2px 8px}
+  .subrow button{border:none;background:none;padding:9px 14px;cursor:pointer;font-size:12.5px;
+             color:var(--muted);border-bottom:2px solid transparent;font-weight:600}
+  .subrow button.active{color:var(--sky-d);border-bottom-color:var(--sky-d)}
+  .grouprow button:hover,.subrow button:hover{background:rgba(98,196,220,.18)}
+  body.dark .grouprow button.active{background:#161f29}
   /* ---- layout ---- */
   main{padding:20px;max-width:1280px;margin:0 auto}
   .tab{display:none}
@@ -186,8 +192,9 @@
    ========================================================================= */
 
 const STORE_KEY = "assetSystem_v1";
-const VERSION = "1.9.1";
+const VERSION = "1.9.2";
 const RELEASE_NOTES = [
+  {v:"1.9.2", d:"탭 그룹화(2단 메뉴: 대시보드·자산·가계부·분석) — 모바일에서 보기 편하게"},
   {v:"1.9.1", d:"현금흐름에 '구독'·'용돈' 분류 추가(AI·넷플릭스 구독 기록), 요약→대시보드 명칭, 용돈관리 탭 정리, 빈 데이터 안내"},
   {v:"1.9.0", d:"공모주(IPO) 탭 + 청약 캘린더(청약일·환불일·상장일·주관사·공모가), 탭별 엑셀 다운로드, 구글 본고딕(Noto Sans KR) 폰트"},
   {v:"1.8.1", d:"투자자산 종류 세분화 — 국내주식을 일반주/공모주로 분리"},
@@ -226,6 +233,14 @@ const TABS = [
   {id:"report",    name:"리포트"},
   {id:"calendar",  name:"캘린더"},
   {id:"pivot",     name:"피벗분석"},
+];
+
+/* ---- 탭 그룹 (모바일 대응 2단 메뉴) ---- */
+const GROUPS = [
+  {name:"대시보드", icon:"📊", tabs:["summary"]},
+  {name:"자산",     icon:"💰", tabs:["dongsan","input","maturity","budongsan","invest","ipo","pension","loans"]},
+  {name:"가계부",   icon:"💵", tabs:["cashflow","cashflow_t"]},
+  {name:"분석·계획",icon:"📈", tabs:["report","calendar","goals","pivot"]},
 ];
 
 /* ---- 드롭다운 옵션 ---- */
@@ -316,10 +331,16 @@ function maturityCalc(r){
 }
 
 /* ========================== 렌더링 ========================== */
+function curGroup(){ return GROUPS.find(g=>g.tabs.includes(curTab)) || GROUPS[0]; }
 function renderTabs(){
-  document.getElementById("tabs").innerHTML = TABS.map(t=>
-    `<button class="${t.id===curTab?'active':''}" onclick="go('${t.id}')">${t.name}</button>`).join("");
+  const cg=curGroup();
+  const grp=GROUPS.map(g=>`<button class="${g===cg?'active':''}" onclick="goGroup('${g.name}')">${g.icon} ${g.name}</button>`).join("");
+  const sub=cg.tabs.length>1
+    ? `<div class="subrow">${cg.tabs.map(id=>{const t=TABS.find(x=>x.id===id);return t?`<button class="${id===curTab?'active':''}" onclick="go('${id}')">${t.name}</button>`:"";}).join("")}</div>`
+    : "";
+  document.getElementById("tabs").innerHTML = `<div class="grouprow">${grp}</div>${sub}`;
 }
+function goGroup(name){ const g=GROUPS.find(x=>x.name===name); if(!g) return; curTab=g.tabs[0]; renderTabs(); render(); window.scrollTo(0,0); }
 function go(id){ curTab=id; renderTabs(); render(); window.scrollTo(0,0); }
 
 function render(){
