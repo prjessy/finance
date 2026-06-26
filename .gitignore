@@ -7,6 +7,9 @@
 *.xls
 *.csv
 
+# Firebase 설정 메모(원본) — config 는 index.html 에 이미 포함됨
+firebase.txt
+
 # OS / 에디터
 Thumbs.db
 .DS_Store
