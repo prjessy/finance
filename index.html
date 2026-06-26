@@ -183,8 +183,9 @@
    ========================================================================= */
 
 const STORE_KEY = "assetSystem_v1";
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const RELEASE_NOTES = [
+  {v:"1.7.0", d:"용돈관리 탭 — 사람별 월 용돈 설정·지급, 남은 용돈·사용 기록 관리"},
   {v:"1.6.0", d:"월간 리포트·인사이트, 금융 캘린더·현금흐름 예측, 지출 자동분류 규칙, 구독·정기결제 추적"},
   {v:"1.5.0", d:"대출·부채 탭, 자산배분 목표, 인쇄/PDF, 다크모드, 모바일 최적화"},
   {v:"1.4.0", d:"순자산 추이 그래프, 도넛·막대 차트, 목표·예산 탭, 표 검색·정렬, 반복거래, 만기 알림 배너"},
@@ -207,6 +208,7 @@ const TABS = [
   {id:"cashflow_t",name:"현금흐름_현황표"},
   {id:"input",     name:"동산 입력창"},
   {id:"cashflow",  name:"현금흐름"},
+  {id:"allowance", name:"용돈관리"},
   {id:"dongsan",   name:"동산"},
   {id:"budongsan", name:"부동산"},
   {id:"invest",    name:"투자자산"},
@@ -245,7 +247,7 @@ const EXPENSE_CATS = OPT.현금분류.filter(c=>!INCOME_CATS.includes(c));
 /* ---- 데이터 모델 ---- */
 let DATA = {
   동산:[], 부동산:[], 투자자산:[], 연금보험:[], 대출:[], 현금흐름:[],
-  스냅샷:[], 반복:[], 설정:{}
+  용돈:[], 스냅샷:[], 반복:[], 설정:{}
 };
 let editId = null;       // 수정 모드에서 선택된 동산 id
 let curTab = "summary";
@@ -316,7 +318,8 @@ function render(){
   const c=document.getElementById("content");
   ({summary:rSummary, cashflow_t:rCashTable, input:rInput, cashflow:rCashflow,
     dongsan:rDongsan, budongsan:rBudongsan, invest:rInvest, pension:rPension,
-    loans:rLoans, maturity:rMaturity, goals:rGoals, report:rReport, calendar:rCalendar, pivot:rPivot}[curTab])(c);
+    allowance:rAllowance, loans:rLoans, maturity:rMaturity, goals:rGoals,
+    report:rReport, calendar:rCalendar, pivot:rPivot}[curTab])(c);
   if(_refocus){ const el=document.getElementById(_refocus);
     if(el){ el.focus(); try{const v=el.value; el.value=''; el.value=v;}catch(e){} } _refocus=null; }
 }
@@ -805,7 +808,7 @@ function exportExcel(){
   const wb=XLSX.utils.book_new();
   const sheets={
     동산:DATA.동산, 부동산:DATA.부동산, 투자자산:DATA.투자자산,
-    연금보험:DATA.연금보험, 대출:(DATA.대출||[]), 현금흐름:DATA.현금흐름
+    연금보험:DATA.연금보험, 대출:(DATA.대출||[]), 현금흐름:DATA.현금흐름, 용돈:(DATA.용돈||[])
   };
   // 동산만기 계산 시트 추가
   const mat=DATA.동산.map(r=>{const m=maturityCalc(r);return {
@@ -836,7 +839,7 @@ function resetAll(){
     try{ exportExcel(); }catch(e){ console.warn(e); }
     if(!confirm("✅ 백업 엑셀을 내려받았습니다.\n이제 정말 모든 데이터를 삭제할까요?")) { toast("초기화 취소됨"); return; }
   }
-  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
+  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
 }
 function loadDemo(){
   if(DATA.동산.length||DATA.부동산.length) { if(!confirm("기존 데이터에 샘플을 추가할까요?")) return; }
@@ -892,6 +895,15 @@ function loadDemo(){
     {키워드:"넷플릭스",분류:"여가"},{키워드:"chatgpt",분류:"여가"},{키워드:"유튜브",분류:"통신"},
     {키워드:"스타벅스",분류:"식비"},{키워드:"gs25",분류:"식비"},{키워드:"주유",분류:"교통"}
   ];
+  // 용돈관리 샘플
+  DATA.설정.용돈지급={자녀:100000,본인:300000};
+  DATA.용돈.push(
+    {id:uid(),일자:ym+"-01",명의자:"자녀",구분:"받음",내용:"월 용돈",금액:100000},
+    {id:uid(),일자:ym+"-06",명의자:"자녀",구분:"지출",내용:"떡볶이",금액:6000},
+    {id:uid(),일자:ym+"-11",명의자:"자녀",구분:"지출",내용:"문구류",금액:8500},
+    {id:uid(),일자:ym+"-01",명의자:"본인",구분:"받음",내용:"월 용돈",금액:300000},
+    {id:uid(),일자:ym+"-09",명의자:"본인",구분:"지출",내용:"점심값",금액:45000}
+  );
   // 목표/예산/배분 샘플
   DATA.설정.순자산목표=1000000000;
   DATA.설정.예산={식비:800000,주거:1400000,교통:200000,통신:120000,여가:300000};
@@ -1243,6 +1255,83 @@ function rGoals(c){
   })()}`;
 }
 
+/* ========================== 용돈관리 ========================== */
+function rAllowance(c){
+  DATA.설정=DATA.설정||{}; const pay=DATA.설정.용돈지급=DATA.설정.용돈지급||{};
+  DATA.용돈=DATA.용돈||[];
+  const ym=ymOffset(0);
+  const people=Object.keys(pay).length?Object.keys(pay):[...new Set(DATA.용돈.map(e=>e.명의자))].filter(Boolean);
+  const monthE=DATA.용돈.filter(e=>(e.일자||"").startsWith(ym));
+  const stat=p=>{
+    const got=monthE.filter(e=>e.명의자===p&&e.구분==="받음").reduce((s,e)=>s+num(e.금액),0);
+    const spent=monthE.filter(e=>e.명의자===p&&e.구분==="지출").reduce((s,e)=>s+num(e.금액),0);
+    const budget=got||num(pay[p]);
+    return {got,spent,budget,left:budget-spent};
+  };
+  c.innerHTML=`
+  <h2 class="sec">🪙 용돈관리</h2>
+  <p class="sub">용돈 받는 사람별로 이번 달 용돈과 남은 금액을 관리합니다. (${ym})</p>
+  <div class="cards">
+    ${people.length?people.map(p=>{const s=stat(p);const pc=s.budget>0?Math.min(100,s.spent/s.budget*100):0;const over=s.budget>0&&s.spent>s.budget;
+      return `<div class="card"><div class="lbl">🙂 ${esc(p)} 남은 용돈</div>
+        <div class="val" style="color:${over?'var(--red)':'var(--green)'}">${won(s.left)}</div>
+        <div class="bar" style="margin-top:8px"><span style="width:${pc.toFixed(0)}%;background:${over?'var(--red)':'var(--sky-d)'}"></span></div>
+        <div class="delta">받음 ${won(s.budget)} · 지출 ${won(s.spent)}${over?' (초과!)':''}</div></div>`;}).join("")
+      :'<div class="card"><div class="lbl">설정된 용돈이 없습니다</div><div class="delta">아래에서 월 용돈을 설정하세요</div></div>'}
+  </div>
+
+  <div class="grid2">
+    <div class="chartbox"><div class="lbl">⚙️ 월 용돈 설정 / 지급</div>
+      <div class="field" style="margin-top:10px"><label>명의자</label><select id="al_p">${selOpts(OPT.명의자)}</select></div>
+      <div class="field"><label>월 용돈</label><input id="al_amt" type="number" placeholder="100000"></div>
+      <div class="btnrow">
+        <button class="btn save" onclick="setAllowance()">💾 용돈 설정</button>
+        <button class="btn save" style="background:var(--green)" onclick="payAllowance()">💸 이번 달 지급</button>
+      </div>
+      ${Object.keys(pay).length?`<div style="margin-top:12px;font-size:12px">${Object.entries(pay).map(([k,v])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)"><span>${esc(k)}</span><b>${won(v)}</b><span class="rowdel" onclick="delAllowanceSet('${k}')">삭제</span></div>`).join("")}</div>`:''}
+    </div>
+    <div class="chartbox"><div class="lbl">＋ 용돈 사용/받음 기록</div>
+      <div class="field" style="margin-top:10px"><label>명의자</label><select id="ae_p">${selOpts(OPT.명의자)}</select></div>
+      <div class="field"><label>구분</label><select id="ae_t"><option>지출</option><option>받음</option></select></div>
+      <div class="field"><label>내용</label><input id="ae_c" placeholder="예: 떡볶이"></div>
+      <div class="field"><label>금액</label><input id="ae_amt" type="number" placeholder="5000"></div>
+      <div class="field"><label>날짜</label><input id="ae_d" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="btnrow"><button class="btn save" onclick="addAllowance()">＋ 기록 추가</button></div>
+    </div>
+  </div>
+
+  ${monthE.length?`<div class="tablewrap"><table>
+    <thead><tr><th>날짜</th><th>명의자</th><th>구분</th><th>내용</th><th class="num">금액</th><th></th></tr></thead>
+    <tbody>${[...monthE].sort((a,b)=>(b.일자||"").localeCompare(a.일자||"")).map(e=>`<tr>
+      <td>${esc(e.일자)}</td><td>${esc(e.명의자)}</td>
+      <td><span class="pill ${e.구분==='받음'?'ok':'due'}">${esc(e.구분)}</span></td>
+      <td>${esc(e.내용)}</td>
+      <td class="num" style="color:${e.구분==='받음'?'var(--green)':'var(--red)'}">${e.구분==='받음'?'+':'−'}${won(e.금액)}</td>
+      <td><span class="rowdel" onclick="delRow('용돈','${e.id}')">삭제</span></td>
+    </tr>`).join("")}</tbody></table></div>`:emptyBox("이번 달 용돈 기록이 없습니다.")}`;
+}
+function setAllowance(){
+  const p=document.getElementById("al_p").value, amt=document.getElementById("al_amt").value;
+  if(!amt){ toast("금액을 입력하세요"); return; }
+  DATA.설정=DATA.설정||{}; DATA.설정.용돈지급=DATA.설정.용돈지급||{}; DATA.설정.용돈지급[p]=amt; save(); render(); toast(p+" 월 용돈 설정됨");
+}
+function delAllowanceSet(p){ if(DATA.설정&&DATA.설정.용돈지급){ delete DATA.설정.용돈지급[p]; save(); render(); } }
+function payAllowance(){
+  DATA.설정=DATA.설정||{}; const pay=DATA.설정.용돈지급||{}; const ym=ymOffset(0); DATA.용돈=DATA.용돈||[]; let n=0;
+  Object.entries(pay).forEach(([p,amt])=>{
+    if(!DATA.용돈.some(e=>e.명의자===p&&e.구분==="받음"&&(e.일자||"").startsWith(ym))){
+      DATA.용돈.push({id:uid(),일자:ym+"-01",명의자:p,구분:"받음",내용:"월 용돈",금액:amt}); n++;
+    }
+  });
+  save(); render(); toast(n?`💸 ${n}명에게 용돈 지급`:"이미 이번 달 지급됨");
+}
+function addAllowance(){
+  const g=id=>document.getElementById("ae_"+id).value;
+  const o={id:uid(),명의자:g("p"),구분:g("t"),내용:g("c"),금액:g("amt"),일자:g("d")};
+  if(!o.금액){ toast("금액을 입력하세요"); return; }
+  DATA.용돈=DATA.용돈||[]; DATA.용돈.push(o); save(); render(); toast("기록 추가됨");
+}
+
 /* ========================== 월간 리포트 / 구독 ========================== */
 function ymOffset(n){ const d=new Date(); d.setMonth(d.getMonth()+n); return d.toISOString().slice(0,7); }
 function monthAgg(ym){
@@ -1386,7 +1475,7 @@ function applyRulesAll(){
 /* ========================== Firebase 브리지 ========================== */
 window.getLocalData = ()=>DATA;
 window.onCloudData = (d)=>{
-  DATA = Object.assign({동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],스냅샷:[],반복:[],설정:{}}, d||{});
+  DATA = Object.assign({동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],스냅샷:[],반복:[],설정:{}}, d||{});
   localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
   render();
 };
