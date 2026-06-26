@@ -157,7 +157,7 @@
 <body>
 <header>
   <h1>💠 자산관리 시스템</h1>
-  <span style="font-size:11.5px;opacity:.85">Excel 매크로 → 웹 버전</span>
+  <span id="verbadge" style="font-size:11px;opacity:.9;cursor:pointer;background:rgba(255,255,255,.18);padding:3px 8px;border-radius:10px" onclick="showReleaseNotes()" title="릴리즈 노트 보기"></span>
   <span class="spacer"></span>
   <button class="tool" onclick="document.getElementById('xlsxfile').click()">📥 엑셀 가져오기</button>
   <button class="tool" onclick="exportExcel()">📤 엑셀 백업</button>
@@ -183,6 +183,23 @@
    ========================================================================= */
 
 const STORE_KEY = "assetSystem_v1";
+const VERSION = "1.6.0";
+const RELEASE_NOTES = [
+  {v:"1.6.0", d:"월간 리포트·인사이트, 금융 캘린더·현금흐름 예측, 지출 자동분류 규칙, 구독·정기결제 추적"},
+  {v:"1.5.0", d:"대출·부채 탭, 자산배분 목표, 인쇄/PDF, 다크모드, 모바일 최적화"},
+  {v:"1.4.0", d:"순자산 추이 그래프, 도넛·막대 차트, 목표·예산 탭, 표 검색·정렬, 반복거래, 만기 알림 배너"},
+  {v:"1.3.0", d:"백업 강화 — 날짜별 백업 파일, 초기화 전 자동 백업"},
+  {v:"1.2.0", d:"Firebase 클라우드 동기화 + Google 로그인 (기기 간 동기화)"},
+  {v:"1.1.0", d:"탭별 엑셀 업로드/양식 다운로드, 피벗분석 탭"},
+  {v:"1.0.0", d:"첫 웹 버전 — 9개 탭, 엑셀 가져오기/내보내기, 브라우저 자동 저장"},
+];
+function showReleaseNotes(){
+  openModal(`<h3>📋 릴리즈 노트 (현재 v${VERSION})</h3>
+    <div style="max-height:60vh;overflow:auto">${RELEASE_NOTES.map(r=>`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div style="font-weight:700;color:var(--sky-d)">v${r.v} ${r.v===VERSION?'<span class="pill ok">현재</span>':''}</div>
+      <div style="font-size:12.5px;margin-top:3px">${esc(r.d)}</div></div>`).join("")}</div>
+    <div class="btnrow"><button class="btn cancel" onclick="closeModal()">닫기</button></div>`);
+}
 
 /* ---- 카테고리 정의 (탭) ---- */
 const TABS = [
@@ -197,6 +214,8 @@ const TABS = [
   {id:"loans",     name:"대출"},
   {id:"maturity",  name:"동산만기"},
   {id:"goals",     name:"목표·예산"},
+  {id:"report",    name:"리포트"},
+  {id:"calendar",  name:"캘린더"},
   {id:"pivot",     name:"피벗분석"},
 ];
 
@@ -297,7 +316,7 @@ function render(){
   const c=document.getElementById("content");
   ({summary:rSummary, cashflow_t:rCashTable, input:rInput, cashflow:rCashflow,
     dongsan:rDongsan, budongsan:rBudongsan, invest:rInvest, pension:rPension,
-    loans:rLoans, maturity:rMaturity, goals:rGoals, pivot:rPivot}[curTab])(c);
+    loans:rLoans, maturity:rMaturity, goals:rGoals, report:rReport, calendar:rCalendar, pivot:rPivot}[curTab])(c);
   if(_refocus){ const el=document.getElementById(_refocus);
     if(el){ el.focus(); try{const v=el.value; el.value=''; el.value=v;}catch(e){} } _refocus=null; }
 }
@@ -514,6 +533,7 @@ function rCashflow(c){
   <p class="sub">수입·지출 내역을 기록합니다. (반복거래로 월급·월세 등 자동 입력)</p>
   <div class="toolbar"><button class="addbtn" onclick="cashForm()">＋ 내역 추가</button>
     <button class="addbtn" style="background:#fff;color:var(--sky-d);border:1px solid var(--sky-d)" onclick="manageRecurring()">🔁 반복거래 설정 (${(DATA.반복||[]).length})</button>
+    <button class="addbtn" style="background:#fff;color:var(--sky-d);border:1px solid var(--sky-d)" onclick="manageRules()">🏷 자동분류 규칙</button>
     ${tbUpload("현금흐름")}${searchBar(cat)}</div>
   ${rows.length?`<div class="tablewrap"><table>
     <thead><tr>${sTh(cat,"일자","일자")}${sTh(cat,"구분","구분")}${sTh(cat,"분류","분류")}${sTh(cat,"내용","내용")}${sTh(cat,"금액","금액","num")}${sTh(cat,"명의자","명의자")}<th></th></tr></thead>
@@ -768,6 +788,7 @@ function importExcel(ev){
             o[normField(cat,k)]= (v instanceof Date)? v.toISOString().slice(0,10) : v;
             has=true;
           });
+          if(cat==="현금흐름" && o.내용 && !o.분류){ const m=autoCat(o.내용); if(m) o.분류=m; }
           if(has){ DATA[cat].push(o); imported++; }
         });
         if(json.length) sheetsHit.push(`${sn}→${cat}(${json.length})`);
@@ -858,11 +879,19 @@ function loadDemo(){
     {ym:back(3),순자산:Math.round(base*0.95)},{ym:back(2),순자산:Math.round(base*0.97)},
     {ym:back(1),순자산:Math.round(base*0.99)},{ym:snapKey(),순자산:base}
   );
-  // 반복거래 샘플
+  // 반복거래 + 구독 샘플
   DATA.반복.push(
     {id:uid(),구분:"수입",분류:"급여",내용:"월급",금액:4200000,명의자:"본인",일:"25"},
-    {id:uid(),구분:"지출",분류:"주거",내용:"월세",금액:600000,명의자:"공동",일:"1"}
+    {id:uid(),구분:"지출",분류:"주거",내용:"월세",금액:600000,명의자:"공동",일:"1"},
+    {id:uid(),구분:"지출",분류:"여가",내용:"넷플릭스",금액:13500,명의자:"본인",일:"5"},
+    {id:uid(),구분:"지출",분류:"여가",내용:"ChatGPT Plus",금액:29000,명의자:"본인",일:"8"},
+    {id:uid(),구분:"지출",분류:"통신",내용:"유튜브 프리미엄",금액:14900,명의자:"본인",일:"12"}
   );
+  // 자동분류 규칙 샘플
+  DATA.설정.분류규칙=[
+    {키워드:"넷플릭스",분류:"여가"},{키워드:"chatgpt",분류:"여가"},{키워드:"유튜브",분류:"통신"},
+    {키워드:"스타벅스",분류:"식비"},{키워드:"gs25",분류:"식비"},{키워드:"주유",분류:"교통"}
+  ];
   // 목표/예산/배분 샘플
   DATA.설정.순자산목표=1000000000;
   DATA.설정.예산={식비:800000,주거:1400000,교통:200000,통신:120000,여가:300000};
@@ -899,6 +928,7 @@ function importCategoryFile(ev){
           o[normField(cat,k)] = (v instanceof Date)? v.toISOString().slice(0,10) : v;
           has=true;
         });
+        if(cat==="현금흐름" && o.내용 && !o.분류){ const m=autoCat(o.내용); if(m) o.분류=m; }
         if(has){ DATA[cat].push(o); added++; }
       });
       save(); render();
@@ -1213,6 +1243,146 @@ function rGoals(c){
   })()}`;
 }
 
+/* ========================== 월간 리포트 / 구독 ========================== */
+function ymOffset(n){ const d=new Date(); d.setMonth(d.getMonth()+n); return d.toISOString().slice(0,7); }
+function monthAgg(ym){
+  let inc=0,exp=0; const byCat={};
+  DATA.현금흐름.forEach(r=>{ if((r.일자||"").slice(0,7)!==ym) return;
+    const a=num(r.금액);
+    if(r.구분==="수입") inc+=a; else { exp+=a; byCat[r.분류]=(byCat[r.분류]||0)+a; } });
+  return {inc,exp,net:inc-exp,byCat};
+}
+function deltaTxt(d,expense){
+  if(!d) return "전월과 동일";
+  const up=d>0, arrow=up?"▲":"▼";
+  const color = expense ? (up?"var(--red)":"var(--green)") : (up?"var(--green)":"var(--red)");
+  return `<span style="color:${color}">${arrow} ${eok(Math.abs(d))} (전월 대비)</span>`;
+}
+function subscriptions(){
+  const out=[];
+  (DATA.반복||[]).filter(r=>r.구분==="지출").forEach(r=>out.push({내용:r.내용||"(무제목)",분류:r.분류,월금액:num(r.금액),src:"반복"}));
+  const grp={};
+  DATA.현금흐름.filter(r=>r.구분==="지출"&&r.내용).forEach(r=>{
+    const k=String(r.내용).trim(); grp[k]=grp[k]||{months:new Set(),amts:[]};
+    grp[k].months.add((r.일자||"").slice(0,7)); grp[k].amts.push(num(r.금액));
+  });
+  Object.entries(grp).forEach(([k,g])=>{
+    if(g.months.size>=2 && !out.some(o=>o.내용===k)){
+      const avg=Math.round(g.amts.reduce((a,b)=>a+b,0)/g.amts.length);
+      out.push({내용:k,분류:"(자동감지)",월금액:avg,src:"auto"});
+    }
+  });
+  return out.sort((a,b)=>b.월금액-a.월금액);
+}
+function rReport(c){
+  const cur=ymOffset(0), prev=ymOffset(-1);
+  const A=monthAgg(cur), B=monthAgg(prev);
+  const sr=A.inc>0?A.net/A.inc*100:0, srPrev=B.inc>0?B.net/B.inc*100:0;
+  const top=Object.entries(A.byCat).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxTop=top.length?top[0][1]:1;
+  const snaps=(DATA.스냅샷||[]), last=snaps[snaps.length-1], prevS=snaps[snaps.length-2];
+  const assetDelta=(last&&prevS)?num(last.순자산)-num(prevS.순자산):null;
+  const subs=subscriptions(), subM=subs.reduce((s,x)=>s+num(x.월금액),0);
+  c.innerHTML=`
+  <h2 class="sec">📊 월간 리포트</h2>
+  <p class="sub">이번 달(${cur}) vs 지난 달(${prev}) 비교 · 인사이트</p>
+  <div class="cards">
+    <div class="card"><div class="lbl">이번 달 수입</div><div class="val" style="color:var(--green)">${eok(A.inc)}</div><div class="delta">${deltaTxt(A.inc-B.inc)}</div></div>
+    <div class="card"><div class="lbl">이번 달 지출</div><div class="val" style="color:var(--red)">${eok(A.exp)}</div><div class="delta">${deltaTxt(A.exp-B.exp,true)}</div></div>
+    <div class="card"><div class="lbl">순흐름(저축)</div><div class="val">${A.net>=0?'+':''}${eok(A.net)}</div><div class="delta">${deltaTxt(A.net-B.net)}</div></div>
+    <div class="card"><div class="lbl">저축률</div><div class="val" style="color:${sr>=0?'var(--sky-d)':'var(--red)'}">${sr.toFixed(0)}%</div><div class="delta">전월 ${srPrev.toFixed(0)}%</div></div>
+    <div class="card"><div class="lbl">자산 증감(전월 스냅샷)</div><div class="val">${assetDelta==null?'-':(assetDelta>=0?'+':'')+eok(assetDelta)}</div><div class="delta">${assetDelta==null?'스냅샷 2개 이상 필요':'순자산 변화'}</div></div>
+  </div>
+  <div class="grid2">
+    <div class="chartbox"><div class="lbl">💸 이번 달 지출 Top</div>
+      ${top.length?`<div class="barchart" style="margin-top:12px">${top.map(([k,v])=>`<div class="barrow"><span>${esc(k)}</span>
+        <div class="bar"><span style="width:${(v/maxTop*100).toFixed(1)}%;background:var(--red)"></span></div>
+        <span class="num" style="font-weight:700">${won(v)}</span></div>`).join("")}</div>`:'<p class="empty">지출 내역이 없습니다.</p>'}
+    </div>
+    <div class="chartbox"><div class="lbl">🔄 구독·정기결제 <span style="margin-left:auto;font-size:12px;color:var(--muted)">월 ${won(subM)} · 연 ${won(subM*12)}</span></div>
+      ${subs.length?`<div class="tablewrap" style="box-shadow:none;border:none;margin-top:8px"><table>
+        <thead><tr><th>내용</th><th>분류</th><th class="num">월</th><th class="num">연간</th></tr></thead>
+        <tbody>${subs.map(s=>`<tr><td>${esc(s.내용)}${s.src==='auto'?' <span class="pill gray">자동</span>':''}</td><td>${esc(s.분류)}</td><td class="num">${won(s.월금액)}</td><td class="num">${won(s.월금액*12)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td colspan="2">합계</td><td class="num">${won(subM)}</td><td class="num">${won(subM*12)}</td></tr></tfoot>
+      </table></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">반복거래로 등록했거나, 같은 내용 지출이 2개월 이상 반복되면 자동 감지됩니다.</div>`
+      :'<p class="empty">감지된 정기결제가 없습니다. 반복거래를 등록하거나 매달 같은 지출이 쌓이면 표시됩니다.</p>'}
+    </div>
+  </div>`;
+}
+
+/* ========================== 금융 캘린더 / 현금흐름 예측 ========================== */
+function rCalendar(c){
+  const events=[];
+  DATA.동산.forEach(r=>{ const m=maturityCalc(r); if(m.matDate){ const d=daysUntil(m.matDate);
+    if(d!=null&&d>=0&&d<=180) events.push({date:m.matDate,d,type:"예적금 만기",color:"var(--sky-d)",desc:`${r.금융기관||''} ${r.투자구분||''} (${won(m.net)})`}); }});
+  (DATA.대출||[]).forEach(r=>{ if(r.만기일){ const d=daysUntil(r.만기일);
+    if(d!=null&&d>=0&&d<=180) events.push({date:r.만기일,d,type:"대출 만기",color:"var(--red)",desc:`${r.금융기관||''} ${r.종류||''} (잔액 ${won(r.잔액)})`}); }});
+  (DATA.반복||[]).forEach(r=>{ for(let k=0;k<3;k++){ const ym=ymOffset(k), day=String(r.일||1).padStart(2,'0'), date=ym+"-"+day, d=daysUntil(date);
+    if(d!=null&&d>=0&&d<=180) events.push({date,d,type:r.구분==="수입"?"수입 예정":"지출 예정",color:r.구분==="수입"?"var(--green)":"var(--amber)",desc:`${r.내용||''} (${won(r.금액)})`}); }});
+  events.sort((a,b)=>a.date.localeCompare(b.date));
+  const recInc=(DATA.반복||[]).filter(r=>r.구분==="수입").reduce((s,r)=>s+num(r.금액),0);
+  const recExp=(DATA.반복||[]).filter(r=>r.구분==="지출").reduce((s,r)=>s+num(r.금액),0);
+  const monthlyNet=recInc-recExp;
+  let bal=totals().동산; const fc=[];
+  for(let k=1;k<=6;k++){ bal+=monthlyNet; fc.push({ym:ymOffset(k),net:monthlyNet,bal}); }
+  c.innerHTML=`
+  <h2 class="sec">📅 금융 캘린더 · 현금흐름 예측</h2>
+  <p class="sub">앞으로 6개월 내 만기·상환·반복거래 일정과 잔액 전망</p>
+  <div class="grid2">
+    <div class="chartbox"><div class="lbl">📌 다가오는 일정 (180일 내)</div>
+      ${events.length?`<div style="margin-top:8px">${events.map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <span class="pill" style="background:${e.color};color:#fff">D-${e.d}</span>
+        <span style="width:90px;color:var(--muted);font-size:11.5px">${e.date}</span>
+        <span style="flex:1">${esc(e.desc)}</span>
+        <span style="color:var(--muted);font-size:11px;white-space:nowrap">${e.type}</span></div>`).join("")}</div>`
+        :'<p class="empty">6개월 내 예정 일정이 없습니다.</p>'}
+    </div>
+    <div class="chartbox"><div class="lbl">💹 현금흐름 예측 (반복거래 기준)</div>
+      <div style="margin:10px 0;font-size:12.5px;color:var(--muted)">월 순흐름 <b style="color:${monthlyNet>=0?'var(--green)':'var(--red)'}">${monthlyNet>=0?'+':''}${eok(monthlyNet)}</b> · 시작 가용현금(예적금) ${eok(totals().동산)}</div>
+      <div class="tablewrap" style="box-shadow:none;border:none"><table>
+        <thead><tr><th>월</th><th class="num">예상 순흐름</th><th class="num">예상 잔액</th></tr></thead>
+        <tbody>${fc.map(f=>`<tr><td>${f.ym}</td><td class="num" style="color:${f.net>=0?'var(--green)':'var(--red)'}">${f.net>=0?'+':''}${won(f.net)}</td><td class="num" style="font-weight:700">${won(f.bal)}</td></tr>`).join("")}</tbody>
+      </table></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">반복거래(월급·월세·구독 등)만 반영한 단순 추정입니다.</div>
+    </div>
+  </div>`;
+}
+
+/* ========================== 지출 자동분류 규칙 ========================== */
+function autoCat(text){
+  if(!text) return null;
+  const rules=(DATA.설정&&DATA.설정.분류규칙)||[];
+  const t=String(text).toLowerCase();
+  for(const r of rules){ if(r.키워드 && t.includes(String(r.키워드).toLowerCase())) return r.분류; }
+  return null;
+}
+function manageRules(){
+  const rules=(DATA.설정&&DATA.설정.분류규칙)||[];
+  const body=`<p class="sub">내역 '내용'에 키워드가 들어가면 분류를 자동 지정합니다. (엑셀 가져올 때 자동 적용)</p>
+    ${rules.length?`<div class="tablewrap" style="margin-bottom:12px"><table><thead><tr><th>키워드</th><th>→ 분류</th><th></th></tr></thead>
+      <tbody>${rules.map((r,i)=>`<tr><td>${esc(r.키워드)}</td><td>${esc(r.분류)}</td><td><span class="rowdel" onclick="delRule(${i})">삭제</span></td></tr>`).join("")}</tbody></table></div>`:'<p class="empty">규칙이 없습니다.</p>'}
+    <div class="field"><label>키워드</label><input id="rl_k" placeholder="예: 넷플릭스, 챗GPT, 스타벅스, GS25"></div>
+    <div class="field"><label>분류</label><select id="rl_c">${selOpts(OPT.현금분류,"여가")}</select></div>
+    <div class="btnrow">
+      <button class="btn save" onclick="addRule()">＋ 규칙 추가</button>
+      <button class="btn save" style="background:var(--green)" onclick="applyRulesAll()">🏷 기존 내역에 적용</button>
+      <button class="btn cancel" onclick="closeModal()">닫기</button>
+    </div>`;
+  openModal(`<h3>🏷 지출 자동분류 규칙</h3>${body}`);
+}
+function addRule(){
+  const k=document.getElementById("rl_k").value.trim(), cat=document.getElementById("rl_c").value;
+  if(!k){ toast("키워드를 입력하세요"); return; }
+  DATA.설정=DATA.설정||{}; DATA.설정.분류규칙=DATA.설정.분류규칙||[];
+  DATA.설정.분류규칙.push({키워드:k,분류:cat}); save(); manageRules(); toast("규칙 추가됨");
+}
+function delRule(i){ DATA.설정.분류규칙.splice(i,1); save(); manageRules(); }
+function applyRulesAll(){
+  let n=0; DATA.현금흐름.forEach(r=>{ if(r.구분!=="수입"){ const m=autoCat(r.내용); if(m && r.분류!==m){ r.분류=m; n++; } } });
+  save(); closeModal(); render(); toast(`🏷 ${n}건 분류 적용됨`);
+}
+
 /* ========================== Firebase 브리지 ========================== */
 window.getLocalData = ()=>DATA;
 window.onCloudData = (d)=>{
@@ -1243,6 +1413,7 @@ if(["동산","부동산","투자자산","연금보험"].some(k=>(DATA[k]||[]).le
   if(!(DATA.스냅샷||[]).some(s=>s.ym===snapKey())) takeSnapshot(true);  // 월 1회 자동 스냅샷
 }
 renderTabs(); render(); renderAuth();
+document.getElementById("verbadge").textContent = "v"+VERSION+" · 릴리즈 노트";
 </script>
 
 <!-- ===== Firebase 연동 (Google 로그인 + Firestore 실시간 동기화) ===== -->
