@@ -17,7 +17,7 @@
        background:var(--bg);color:var(--ink);font-size:13px}
   /* ---- top bar ---- */
   header{background:linear-gradient(180deg,var(--sky),var(--sky-d));color:#fff;
-         padding:12px 20px;display:flex;align-items:center;gap:18px;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+         padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 6px rgba(0,0,0,.12)}
   header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.5px;white-space:nowrap}
   header .spacer{flex:1}
   .tool{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5);color:#fff;
@@ -120,6 +120,38 @@
   th.sortable:hover{background:#e3edf2}
   .goalrow{display:grid;grid-template-columns:110px 1fr 150px;gap:10px;align-items:center;margin-bottom:8px;font-size:12.5px}
   .goalrow .over{color:var(--red);font-weight:700}
+  /* ---- 다크모드 ---- */
+  body.dark{--ink:#e6edf3;--muted:#93a4b4;--line:#283744;--bg:#0e151d;--panel:#18222d;--sky-l:#15303a}
+  body.dark .card,body.dark .chartbox,body.dark .tablewrap,body.dark .modal,body.dark .panel{background:#161f29}
+  body.dark nav{background:#161f29}
+  body.dark th{background:#18222d;color:#a9bccb}
+  body.dark tfoot td{background:#13202a}
+  body.dark .field input,body.dark .field select,body.dark .field textarea,
+  body.dark .toolbar input,body.dark .toolbar select,body.dark .goalrow input{background:#0e151d;color:#e6edf3;border-color:#283744}
+  body.dark .btn.cancel,body.dark .btn.del{background:#161f29}
+  body.dark th.sortable:hover{background:#1d2c38}
+  /* ---- 모바일 ---- */
+  @media(max-width:600px){
+    header{padding:10px 12px;gap:8px}
+    header h1{font-size:16px}
+    header .spacer{flex:0}
+    .tool{padding:6px 9px;font-size:11px}
+    main{padding:12px}
+    nav button{padding:9px 11px;font-size:12px}
+    .field{grid-template-columns:84px 1fr}
+    .goalrow{grid-template-columns:1fr;gap:4px}
+    .card .val{font-size:18px}
+  }
+  /* ---- 인쇄/PDF ---- */
+  @media print{
+    header,nav,.toolbar,#toast,.modalbk,.banner .go,.rowact,.rowdel,.addbtn{display:none !important}
+    main{padding:0;max-width:none}
+    body{background:#fff;font-size:11px}
+    .tablewrap{overflow:visible;box-shadow:none;border:1px solid #ccc}
+    .chartbox,.card{box-shadow:none;break-inside:avoid}
+    .grid2{grid-template-columns:1fr 1fr}
+    th{position:static}
+  }
 </style>
 </head>
 <body>
@@ -130,6 +162,8 @@
   <button class="tool" onclick="document.getElementById('xlsxfile').click()">📥 엑셀 가져오기</button>
   <button class="tool" onclick="exportExcel()">📤 엑셀 백업</button>
   <button class="tool" onclick="loadDemo()">🎲 샘플 데이터</button>
+  <button class="tool" onclick="printReport()">🖨 인쇄/PDF</button>
+  <button class="tool" onclick="toggleDark()" title="다크모드">🌙</button>
   <button class="tool warn" onclick="resetAll()">🗑 초기화</button>
   <span id="authbox" style="display:flex;align-items:center;gap:8px"></span>
   <input type="file" id="xlsxfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcel(event)">
@@ -160,6 +194,7 @@ const TABS = [
   {id:"budongsan", name:"부동산"},
   {id:"invest",    name:"투자자산"},
   {id:"pension",   name:"연금보험"},
+  {id:"loans",     name:"대출"},
   {id:"maturity",  name:"동산만기"},
   {id:"goals",     name:"목표·예산"},
   {id:"pivot",     name:"피벗분석"},
@@ -176,19 +211,21 @@ const OPT = {
   연금종류: ["연금저축","IRP","종신보험","정기보험","실손보험","변액보험","저축보험"],
   현금구분: ["수입","지출"],
   현금분류: ["급여","사업","이자/배당","임대","상여","기타수입","주거","식비","교통","통신","보험료","교육","의료","여가","저축/투자","대출상환","기타지출"],
+  대출종류: ["신용대출","주택담보대출","전세자금대출","마이너스통장","카드론","학자금대출","자동차할부","기타"],
+  상환방식: ["원리금균등","원금균등","만기일시","마이너스(한도)"],
 };
 
 /* 세율 (만기 이자 세후 계산용) */
 const TAXRATE = {"과세":0.154,"세금우대":0.095,"비과세":0};
 
 /* 데이터 카테고리(레코드 배열) / 수입·지출 분류 */
-const CATS = ["동산","부동산","투자자산","연금보험","현금흐름"];
+const CATS = ["동산","부동산","투자자산","연금보험","대출","현금흐름"];
 const INCOME_CATS = ["급여","사업","이자/배당","임대","상여","기타수입"];
 const EXPENSE_CATS = OPT.현금분류.filter(c=>!INCOME_CATS.includes(c));
 
 /* ---- 데이터 모델 ---- */
 let DATA = {
-  동산:[], 부동산:[], 투자자산:[], 연금보험:[], 현금흐름:[],
+  동산:[], 부동산:[], 투자자산:[], 연금보험:[], 대출:[], 현금흐름:[],
   스냅샷:[], 반복:[], 설정:{}
 };
 let editId = null;       // 수정 모드에서 선택된 동산 id
@@ -260,7 +297,7 @@ function render(){
   const c=document.getElementById("content");
   ({summary:rSummary, cashflow_t:rCashTable, input:rInput, cashflow:rCashflow,
     dongsan:rDongsan, budongsan:rBudongsan, invest:rInvest, pension:rPension,
-    maturity:rMaturity, goals:rGoals, pivot:rPivot}[curTab])(c);
+    loans:rLoans, maturity:rMaturity, goals:rGoals, pivot:rPivot}[curTab])(c);
   if(_refocus){ const el=document.getElementById(_refocus);
     if(el){ el.focus(); try{const v=el.value; el.value=''; el.value=v;}catch(e){} } _refocus=null; }
 }
@@ -292,11 +329,13 @@ function processRows(cat,rows){
 function totals(){
   const 동산 = DATA.동산.reduce((s,r)=>s+num(r.예치금액),0);
   const 부동산 = DATA.부동산.reduce((s,r)=>s+num(r.현재가),0);
-  const 부채 = DATA.부동산.reduce((s,r)=>s+num(r.대출),0);
+  const 담보 = DATA.부동산.reduce((s,r)=>s+num(r.대출),0);
+  const 대출 = (DATA.대출||[]).reduce((s,r)=>s+num(r.잔액),0);
+  const 부채 = 담보 + 대출;
   const 투자 = DATA.투자자산.reduce((s,r)=>s+(num(r.현재가)*num(r.수량)||num(r.평가금액)),0);
   const 연금 = DATA.연금보험.reduce((s,r)=>s+num(r.납입누계),0);
   const 총자산 = 동산+부동산+투자+연금;
-  return {동산,부동산:부동산,부채,투자,연금,총자산,순자산:총자산-부채};
+  return {동산,부동산:부동산,담보,대출,부채,투자,연금,총자산,순자산:총자산-부채};
 }
 function rSummary(c){
   const t=totals();
@@ -329,6 +368,8 @@ function rSummary(c){
       <div class="val">${eok(t.투자)}</div><div class="delta">${DATA.투자자산.length}종목</div></div>
     <div class="card"><div class="lbl"><span class="dot" style="background:#e0a526"></span>연금/보험</div>
       <div class="val">${eok(t.연금)}</div><div class="delta">${DATA.연금보험.length}건</div></div>
+    <div class="card"><div class="lbl"><span class="dot" style="background:var(--red)"></span>부채(대출)</div>
+      <div class="val" style="color:var(--red)">${eok(t.부채)}</div><div class="delta">담보 ${eok(t.담보)} · 신용 등 ${eok(t.대출)}</div></div>
   </div>
 
   <div class="grid2">
@@ -536,6 +577,28 @@ function rBudongsan(c){
     </table></div>`:emptyBox("부동산이 없습니다.")}`;
 }
 
+/* ---------- 대출·부채 ---------- */
+function rLoans(c){
+  const cat="대출";
+  const rows=processRows(cat,DATA.대출||[]);
+  const bal=rows.reduce((s,r)=>s+num(r.잔액),0), mon=rows.reduce((s,r)=>s+num(r.월상환액),0);
+  c.innerHTML=`
+  <h2 class="sec">💳 대출·부채</h2>
+  <p class="sub">신용대출·마이너스통장·카드론 등. 잔액은 요약의 순자산에서 자동 차감됩니다.</p>
+  <div class="toolbar"><button class="addbtn" onclick="genForm('대출')">＋ 대출 추가</button>${tbUpload("대출")}${searchBar(cat)}</div>
+  ${rows.length?`<div class="tablewrap"><table>
+    <thead><tr>${sTh(cat,"종류","종류")}${sTh(cat,"금융기관","금융기관")}${sTh(cat,"명의자","명의자")}${sTh(cat,"대출원금","대출원금","num")}${sTh(cat,"잔액","잔액","num")}${sTh(cat,"금리","금리","num")}${sTh(cat,"월상환액","월상환액","num")}<th>상환방식</th>${sTh(cat,"만기일","만기일")}<th></th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td>${esc(r.종류)}</td><td>${esc(r.금융기관)}</td><td>${esc(r.명의자)}</td>
+      <td class="num">${won(r.대출원금)}</td><td class="num" style="color:var(--red);font-weight:700">${won(r.잔액)}</td>
+      <td class="num">${r.금리?pct(rate(r.금리)):'-'}</td><td class="num">${won(r.월상환액)}</td>
+      <td>${esc(r.상환방식)}</td><td>${esc(r.만기일)}</td>
+      <td><span class="rowact" onclick="genForm('대출','${r.id}')">수정</span><span class="rowdel" onclick="delRow('대출','${r.id}')">삭제</span></td>
+    </tr>`).join("")}</tbody>
+    <tfoot><tr><td colspan="4">합계 ${rows.length}건</td><td class="num">${won(bal)}</td><td></td><td class="num">${won(mon)}</td><td colspan="3"></td></tr></tfoot>
+    </table></div>`:emptyBox("등록된 대출이 없습니다.")}`;
+}
+
 /* ---------- 투자자산 ---------- */
 function rInvest(c){
   const cat="투자자산";
@@ -623,6 +686,9 @@ const FORMDEF = {
     ["월납입","number"],["납입기간","text"],["납입누계","number"],["예상수령액","number"],["개시일","date"],["메모","textarea"]],
   현금흐름:[["일자","date"],["구분","select","현금구분"],["분류","select","현금분류"],["내용","text"],
     ["금액","number"],["명의자","select","명의자"]],
+  대출:[["종류","select","대출종류"],["금융기관","text"],["명의자","select","명의자"],
+    ["대출원금","number"],["잔액","number"],["금리","text"],["월상환액","number"],
+    ["상환방식","select","상환방식"],["시작일","date"],["만기일","date"],["메모","textarea"]],
 };
 function genForm(cat,id){
   const def=FORMDEF[cat], r=id?DATA[cat].find(x=>x.id===id)||{}:{};
@@ -663,6 +729,7 @@ const SHEET_MAP = {
   "부동산":"부동산","투자자산":"투자자산","투자":"투자자산","주식":"투자자산",
   "연금보험":"연금보험","연금":"연금보험","보험":"연금보험",
   "현금흐름":"현금흐름","현금":"현금흐름","가계부":"현금흐름",
+  "대출":"대출","부채":"대출","대출부채":"대출",
 };
 /* 헤더 별칭 → 표준 필드 */
 const ALIAS = {
@@ -717,7 +784,7 @@ function exportExcel(){
   const wb=XLSX.utils.book_new();
   const sheets={
     동산:DATA.동산, 부동산:DATA.부동산, 투자자산:DATA.투자자산,
-    연금보험:DATA.연금보험, 현금흐름:DATA.현금흐름
+    연금보험:DATA.연금보험, 대출:(DATA.대출||[]), 현금흐름:DATA.현금흐름
   };
   // 동산만기 계산 시트 추가
   const mat=DATA.동산.map(r=>{const m=maturityCalc(r);return {
@@ -748,7 +815,7 @@ function resetAll(){
     try{ exportExcel(); }catch(e){ console.warn(e); }
     if(!confirm("✅ 백업 엑셀을 내려받았습니다.\n이제 정말 모든 데이터를 삭제할까요?")) { toast("초기화 취소됨"); return; }
   }
-  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],현금흐름:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
+  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
 }
 function loadDemo(){
   if(DATA.동산.length||DATA.부동산.length) { if(!confirm("기존 데이터에 샘플을 추가할까요?")) return; }
@@ -778,6 +845,11 @@ function loadDemo(){
     {id:uid(),일자:ym+"-15",구분:"수입",분류:"이자/배당",내용:"배당금",금액:120000,명의자:"본인"},
     {id:uid(),일자:ym+"-20",구분:"지출",분류:"저축/투자",내용:"적금 자동이체",금액:500000,명의자:"엄마"}
   );
+  // 대출 샘플
+  DATA.대출.push(
+    {id:uid(),종류:"주택담보대출",금융기관:"국민은행",명의자:"공동",대출원금:200000000,잔액:182000000,금리:"3.9",월상환액:1180000,상환방식:"원리금균등",시작일:"2019-06-01",만기일:"2049-06-01",메모:"아파트"},
+    {id:uid(),종류:"마이너스통장",금융기관:"카카오뱅크",명의자:"본인",대출원금:30000000,잔액:8500000,금리:"5.2",월상환액:0,상환방식:"마이너스(한도)",시작일:"2024-02-01",만기일:"2026-02-01",메모:"비상시"}
+  );
   // 추이 샘플 (지난 5개월 순자산)
   const base=totals().순자산;
   const back=(n)=>{ const d=new Date(); d.setMonth(d.getMonth()-n); return d.toISOString().slice(0,7); };
@@ -791,9 +863,10 @@ function loadDemo(){
     {id:uid(),구분:"수입",분류:"급여",내용:"월급",금액:4200000,명의자:"본인",일:"25"},
     {id:uid(),구분:"지출",분류:"주거",내용:"월세",금액:600000,명의자:"공동",일:"1"}
   );
-  // 목표/예산 샘플
+  // 목표/예산/배분 샘플
   DATA.설정.순자산목표=1000000000;
   DATA.설정.예산={식비:800000,주거:1400000,교통:200000,통신:120000,여가:300000};
+  DATA.설정.배분={동산:20,부동산:50,투자자산:20,연금보험:10};
   save(); render(); toast("🎲 샘플 데이터 추가됨");
 }
 
@@ -1067,6 +1140,14 @@ function runRecurring(){ const n=generateRecurring(); closeModal(); render(); to
 /* ========================== 목표·예산 ========================== */
 function setGoal(v){ DATA.설정=DATA.설정||{}; DATA.설정.순자산목표=v; save(); render(); }
 function setBudget(cat,v){ DATA.설정=DATA.설정||{}; DATA.설정.예산=DATA.설정.예산||{}; DATA.설정.예산[cat]=v; save(); render(); }
+function setAlloc(k,v){ DATA.설정=DATA.설정||{}; DATA.설정.배분=DATA.설정.배분||{}; DATA.설정.배분[k]=v; save(); render(); }
+
+/* ========================== 인쇄/PDF · 다크모드 ========================== */
+function printReport(){ if(curTab!=='summary') go('summary'); setTimeout(()=>window.print(),200); }
+function toggleDark(){
+  document.body.classList.toggle('dark');
+  localStorage.setItem('theme', document.body.classList.contains('dark')?'dark':'light');
+}
 function rGoals(c){
   DATA.설정=DATA.설정||{}; const s=DATA.설정; s.예산=s.예산||{};
   const t=totals(), target=num(s.순자산목표), ym=snapKey();
@@ -1109,13 +1190,33 @@ function rGoals(c){
       <span>총 예산 ${won(totB)}</span><span>총 지출 ${won(totA)}</span>
       <span style="color:${totA>totB&&totB>0?'var(--red)':'var(--green)'}">${totB>0?(totA>totB?'초과 '+won(totA-totB):'잔여 '+won(totB-totA)):''}</span>
     </div>
-  </div>`;
+  </div>
+
+  ${(()=>{
+    const cls=[{k:"동산",v:t.동산,c:"#62c4dc"},{k:"부동산",v:t.부동산,c:"#3b6fd6"},{k:"투자자산",v:t.투자,c:"#2e9e6b"},{k:"연금보험",v:t.연금,c:"#e0a526"}];
+    const tot=t.총자산||1, tg=s.배분||{};
+    const sumT=cls.reduce((a,x)=>a+num(tg[x.k]),0);
+    return `<div class="chartbox" style="margin-top:18px">
+      <div class="lbl">📊 자산배분 목표 vs 실제 ${sumT?`<span style="margin-left:auto;font-size:11px;color:${sumT===100?'var(--green)':'var(--red)'}">목표 합계 ${sumT}%</span>`:''}</div>
+      <div style="margin-top:12px">${cls.map(x=>{
+        const act=x.v/tot*100, target=num(tg[x.k]);
+        return `<div class="goalrow" style="grid-template-columns:78px 1fr 66px 86px">
+          <span>${x.k}</span>
+          <div class="bar" style="position:relative;height:14px"><span style="width:${act.toFixed(1)}%;background:${x.c}"></span>
+            ${target>0?`<i style="position:absolute;top:-3px;left:${Math.min(100,target)}%;width:2px;height:20px;background:var(--ink)"></i>`:''}</div>
+          <span style="text-align:right">실제 ${act.toFixed(0)}%</span>
+          <span style="text-align:right"><input type="number" value="${tg[x.k]??''}" placeholder="목표%" onchange="setAlloc('${x.k}',this.value)" style="width:62px;padding:4px 6px;border:1px solid #c9d4dc;border-radius:5px;text-align:right"></span>
+        </div>`;
+      }).join("")}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">세로선(│)이 목표 비중, 색 막대가 실제 비중입니다. 목표% 합계가 100이 되도록 입력하세요.</div>
+    </div>`;
+  })()}`;
 }
 
 /* ========================== Firebase 브리지 ========================== */
 window.getLocalData = ()=>DATA;
 window.onCloudData = (d)=>{
-  DATA = Object.assign({동산:[],부동산:[],투자자산:[],연금보험:[],현금흐름:[],스냅샷:[],반복:[],설정:{}}, d||{});
+  DATA = Object.assign({동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],스냅샷:[],반복:[],설정:{}}, d||{});
   localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
   render();
 };
@@ -1133,6 +1234,7 @@ function fbLogin(){ if(window.fb&&window.fb.ready) window.fb.signIn(); else toas
 function fbLogout(){ if(window.fb) window.fb.signOut(); }
 
 /* ========================== 시작 ========================== */
+if(localStorage.getItem('theme')==='dark') document.body.classList.add('dark');
 load();
 generateRecurring();                                 // 이번 달 반복거래 자동 생성
 if(["동산","부동산","투자자산","연금보험"].some(k=>(DATA[k]||[]).length)){
