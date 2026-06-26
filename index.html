@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>자산관리 시스템</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="xlsx.full.min.js"></script>
 <style>
   :root{
@@ -13,7 +16,7 @@
     --blue:#3b6fd6;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:"맑은 고딕","Malgun Gothic",-apple-system,Segoe UI,sans-serif;
+  body{margin:0;font-family:"Noto Sans KR","맑은 고딕","Malgun Gothic",-apple-system,Segoe UI,sans-serif;
        background:var(--bg);color:var(--ink);font-size:13px}
   /* ---- top bar ---- */
   header{background:linear-gradient(180deg,var(--sky),var(--sky-d));color:#fff;
@@ -183,8 +186,9 @@
    ========================================================================= */
 
 const STORE_KEY = "assetSystem_v1";
-const VERSION = "1.8.1";
+const VERSION = "1.9.0";
 const RELEASE_NOTES = [
+  {v:"1.9.0", d:"공모주(IPO) 탭 + 청약 캘린더(청약일·환불일·상장일·주관사·공모가), 탭별 엑셀 다운로드, 구글 본고딕(Noto Sans KR) 폰트"},
   {v:"1.8.1", d:"투자자산 종류 세분화 — 국내주식을 일반주/공모주로 분리"},
   {v:"1.8.0", d:"목표별 저축통장(여러 목표), 연말정산 세액공제 추적(연금저축·IRP), 만기·납입 알림(브라우저), 일일 사용가능액"},
   {v:"1.7.0", d:"용돈관리 탭 — 사람별 월 용돈 설정·지급, 남은 용돈·사용 기록 관리"},
@@ -214,6 +218,7 @@ const TABS = [
   {id:"dongsan",   name:"동산"},
   {id:"budongsan", name:"부동산"},
   {id:"invest",    name:"투자자산"},
+  {id:"ipo",       name:"공모주"},
   {id:"pension",   name:"연금보험"},
   {id:"loans",     name:"대출"},
   {id:"maturity",  name:"동산만기"},
@@ -236,19 +241,20 @@ const OPT = {
   현금분류: ["급여","사업","이자/배당","임대","상여","기타수입","주거","식비","교통","통신","보험료","교육","의료","여가","저축/투자","대출상환","기타지출"],
   대출종류: ["신용대출","주택담보대출","전세자금대출","마이너스통장","카드론","학자금대출","자동차할부","기타"],
   상환방식: ["원리금균등","원금균등","만기일시","마이너스(한도)"],
+  공모주상태: ["예정","청약중","배정","미배정","상장","매도완료"],
 };
 
 /* 세율 (만기 이자 세후 계산용) */
 const TAXRATE = {"과세":0.154,"세금우대":0.095,"비과세":0};
 
 /* 데이터 카테고리(레코드 배열) / 수입·지출 분류 */
-const CATS = ["동산","부동산","투자자산","연금보험","대출","현금흐름"];
+const CATS = ["동산","부동산","투자자산","공모주","연금보험","대출","현금흐름"];
 const INCOME_CATS = ["급여","사업","이자/배당","임대","상여","기타수입"];
 const EXPENSE_CATS = OPT.현금분류.filter(c=>!INCOME_CATS.includes(c));
 
 /* ---- 데이터 모델 ---- */
 let DATA = {
-  동산:[], 부동산:[], 투자자산:[], 연금보험:[], 대출:[], 현금흐름:[],
+  동산:[], 부동산:[], 투자자산:[], 공모주:[], 연금보험:[], 대출:[], 현금흐름:[],
   용돈:[], 저축목표:[], 스냅샷:[], 반복:[], 설정:{}
 };
 let editId = null;       // 수정 모드에서 선택된 동산 id
@@ -320,7 +326,7 @@ function render(){
   const c=document.getElementById("content");
   ({summary:rSummary, cashflow_t:rCashTable, input:rInput, cashflow:rCashflow,
     dongsan:rDongsan, budongsan:rBudongsan, invest:rInvest, pension:rPension,
-    allowance:rAllowance, loans:rLoans, maturity:rMaturity, goals:rGoals,
+    allowance:rAllowance, ipo:rIPO, loans:rLoans, maturity:rMaturity, goals:rGoals,
     report:rReport, calendar:rCalendar, pivot:rPivot}[curTab])(c);
   if(_refocus){ const el=document.getElementById(_refocus);
     if(el){ el.focus(); try{const v=el.value; el.value=''; el.value=v;}catch(e){} } _refocus=null; }
@@ -649,6 +655,43 @@ function rInvest(c){
     </table></div>`:emptyBox("투자자산이 없습니다.")}`;
 }
 
+/* ---------- 공모주 (IPO) ---------- */
+function ipoPill(s){ return s==="상장"||s==="매도완료"?"ok":s==="배정"?"soon":s==="미배정"?"gray":"due"; }
+function rIPO(c){
+  const cat="공모주";
+  const rows=processRows(cat,DATA.공모주||[]);
+  const evs=[];
+  (DATA.공모주||[]).forEach(r=>{
+    [["청약일","청약","var(--sky-d)"],["환불일","환불","var(--amber)"],["상장일","상장","var(--green)"]].forEach(([f,lab,col])=>{
+      if(r[f]){ const d=daysUntil(r[f]); if(d!=null&&d>=-7&&d<=120) evs.push({date:r[f],d,lab,col,종목:r.종목,주관사:r.주관사,공모가:r.공모가}); }
+    });
+  });
+  evs.sort((a,b)=>a.date.localeCompare(b.date));
+  c.innerHTML=`
+  <h2 class="sec">🎟 공모주 (IPO)</h2>
+  <p class="sub">공모주 청약 일정·종목·주관사·공모가 관리. 청약일·환불일·상장일은 캘린더·알림에도 반영됩니다.</p>
+  <div class="toolbar"><button class="addbtn" onclick="genForm('공모주')">＋ 공모주 추가</button>${tbUpload("공모주")}${searchBar(cat)}</div>
+
+  <div class="chartbox" style="margin-bottom:18px"><div class="lbl">📅 청약 캘린더 (다가오는 일정)</div>
+    ${evs.length?`<div style="margin-top:8px">${evs.map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <span class="pill" style="background:${e.col};color:#fff">${e.d<0?'지남':'D-'+e.d}</span>
+      <span style="width:92px;color:var(--muted);font-size:11.5px">${e.date}</span>
+      <span style="font-weight:700">${esc(e.종목)}</span>
+      <span style="color:var(--muted);font-size:12px">${esc(e.주관사||'')}</span>
+      <span style="margin-left:auto;font-size:12px">${e.공모가?'공모가 '+won(e.공모가):''} · <b>${e.lab}</b></span></div>`).join("")}</div>`
+      :'<p class="empty">예정된 청약 일정이 없습니다. 공모주를 추가하세요.</p>'}
+  </div>
+
+  ${rows.length?`<div class="tablewrap"><table>
+    <thead><tr>${sTh(cat,"종목","종목")}${sTh(cat,"주관사","주관사")}${sTh(cat,"청약일","청약일")}${sTh(cat,"환불일","환불일")}${sTh(cat,"상장일","상장일")}${sTh(cat,"공모가","공모가","num")}${sTh(cat,"청약수량","청약수량","num")}${sTh(cat,"배정수량","배정수량","num")}${sTh(cat,"상태","상태")}<th></th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td>${esc(r.종목)}</td><td>${esc(r.주관사)}</td><td>${esc(r.청약일)}</td><td>${esc(r.환불일)}</td><td>${esc(r.상장일)}</td>
+      <td class="num">${won(r.공모가)}</td><td class="num">${esc(r.청약수량)}</td><td class="num">${esc(r.배정수량)}</td>
+      <td><span class="pill ${ipoPill(r.상태)}">${esc(r.상태)}</span></td>
+      <td><span class="rowact" onclick="genForm('공모주','${r.id}')">수정</span><span class="rowdel" onclick="delRow('공모주','${r.id}')">삭제</span></td>
+    </tr>`).join("")}</tbody></table></div>`:emptyBox("등록된 공모주가 없습니다.")}`;
+}
+
 /* ---------- 연금보험 ---------- */
 function rPension(c){
   const cat="연금보험";
@@ -714,6 +757,9 @@ const FORMDEF = {
   대출:[["종류","select","대출종류"],["금융기관","text"],["명의자","select","명의자"],
     ["대출원금","number"],["잔액","number"],["금리","text"],["월상환액","number"],
     ["상환방식","select","상환방식"],["시작일","date"],["만기일","date"],["메모","textarea"]],
+  공모주:[["종목","text"],["주관사","text"],["청약일","date"],["환불일","date"],["상장일","date"],
+    ["공모가","number"],["청약수량","number"],["배정수량","number"],["증거금","number"],
+    ["명의자","select","명의자"],["상태","select","공모주상태"],["메모","textarea"]],
 };
 function genForm(cat,id){
   const def=FORMDEF[cat], r=id?DATA[cat].find(x=>x.id===id)||{}:{};
@@ -755,6 +801,7 @@ const SHEET_MAP = {
   "연금보험":"연금보험","연금":"연금보험","보험":"연금보험",
   "현금흐름":"현금흐름","현금":"현금흐름","가계부":"현금흐름",
   "대출":"대출","부채":"대출","대출부채":"대출",
+  "공모주":"공모주","IPO":"공모주","청약":"공모주",
 };
 /* 헤더 별칭 → 표준 필드 */
 const ALIAS = {
@@ -810,7 +857,7 @@ function exportExcel(){
   const wb=XLSX.utils.book_new();
   const sheets={
     동산:DATA.동산, 부동산:DATA.부동산, 투자자산:DATA.투자자산,
-    연금보험:DATA.연금보험, 대출:(DATA.대출||[]), 현금흐름:DATA.현금흐름, 용돈:(DATA.용돈||[])
+    공모주:(DATA.공모주||[]), 연금보험:DATA.연금보험, 대출:(DATA.대출||[]), 현금흐름:DATA.현금흐름, 용돈:(DATA.용돈||[])
   };
   // 동산만기 계산 시트 추가
   const mat=DATA.동산.map(r=>{const m=maturityCalc(r);return {
@@ -841,7 +888,7 @@ function resetAll(){
     try{ exportExcel(); }catch(e){ console.warn(e); }
     if(!confirm("✅ 백업 엑셀을 내려받았습니다.\n이제 정말 모든 데이터를 삭제할까요?")) { toast("초기화 취소됨"); return; }
   }
-  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],저축목표:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
+  DATA={동산:[],부동산:[],투자자산:[],공모주:[],연금보험:[],대출:[],현금흐름:[],용돈:[],저축목표:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
 }
 function loadDemo(){
   if(DATA.동산.length||DATA.부동산.length) { if(!confirm("기존 데이터에 샘플을 추가할까요?")) return; }
@@ -859,6 +906,12 @@ function loadDemo(){
     {id:uid(),종류:"국내주식(공모주)",종목명:"OO바이오 공모주",계좌:"한국투자",명의자:"본인",수량:30,매입가:30000,현재가:41000,평가금액:"",메모:"공모청약 배정"},
     {id:uid(),종류:"ETF",종목명:"S&P500",계좌:"미래에셋",명의자:"본인",수량:50,매입가:15000,현재가:18500,평가금액:"",메모:"연금저축펀드"},
     {id:uid(),종류:"코인",종목명:"비트코인",계좌:"업비트",명의자:"본인",수량:0.15,매입가:90000000,현재가:140000000,평가금액:"",메모:""}
+  );
+  // 공모주 청약 샘플
+  const nd=(n)=>{ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+  DATA.공모주.push(
+    {id:uid(),종목:"OO바이오",주관사:"한국투자증권",청약일:nd(3),환불일:nd(5),상장일:nd(12),공모가:30000,청약수량:100,배정수량:30,증거금:1500000,명의자:"본인",상태:"청약중",메모:""},
+    {id:uid(),종목:"△△테크",주관사:"미래에셋증권",청약일:nd(15),환불일:nd(17),상장일:nd(24),공모가:18000,청약수량:0,배정수량:0,증거금:0,명의자:"본인",상태:"예정",메모:"관심"}
   );
   DATA.연금보험.push(
     {id:uid(),종류:"연금저축",상품명:"연금저축펀드",보험사:"미래에셋",명의자:"본인",월납입:300000,납입기간:"2018~",납입누계:28800000,예상수령액:65000000,개시일:"2045-01-01",메모:"세액공제"},
@@ -924,8 +977,15 @@ function loadDemo(){
 /* ========================== 탭별 엑셀 업로드 / 양식 ========================== */
 function tbUpload(cat){
   return `<button class="addbtn" style="background:#fff;color:var(--sky-d);border:1px solid var(--sky-d)" onclick="uploadTo('${cat}')">📥 엑셀 업로드</button>
-  <button class="addbtn" style="background:#fff;color:var(--muted);border:1px solid #c9d4dc" onclick="downloadTemplate('${cat}')">📄 양식 다운로드</button>
-  <span style="color:var(--muted);font-size:11px">헤더가 있는 엑셀/CSV를 올리면 이 탭에 추가됩니다</span>`;
+  <button class="addbtn" style="background:#fff;color:var(--green);border:1px solid var(--green)" onclick="downloadCategory('${cat}')">📤 엑셀 다운로드</button>
+  <button class="addbtn" style="background:#fff;color:var(--muted);border:1px solid #c9d4dc" onclick="downloadTemplate('${cat}')">📄 양식</button>`;
+}
+function downloadCategory(cat){
+  const arr=(DATA[cat]||[]).map(({id,...r})=>r);
+  const ws=XLSX.utils.json_to_sheet(arr.length?arr:[{}]);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,cat);
+  XLSX.writeFile(wb,`${cat}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(`📤 ${cat} ${arr.length}건 다운로드`);
 }
 function catHeaders(cat){
   if(cat==="동산") return ["투자구분","세금여부","명의자","금융기관","금융기관상세","계좌상태","예치금액","시작일","개월","금리","메모"];
@@ -1518,6 +1578,8 @@ function collectEvents(maxDays){
     if(d!=null&&d>=0&&d<=maxDays) events.push({date:r.만기일,d,type:"대출 만기",color:"var(--red)",desc:`${r.금융기관||''} ${r.종류||''} (잔액 ${won(r.잔액)})`}); }});
   (DATA.반복||[]).forEach(r=>{ for(let k=0;k<3;k++){ const ym=ymOffset(k), day=String(r.일||1).padStart(2,'0'), date=ym+"-"+day, d=daysUntil(date);
     if(d!=null&&d>=0&&d<=maxDays) events.push({date,d,type:r.구분==="수입"?"수입 예정":"지출 예정",color:r.구분==="수입"?"var(--green)":"var(--amber)",desc:`${r.내용||''} (${won(r.금액)})`}); }});
+  (DATA.공모주||[]).forEach(r=>{ [["청약일","공모주 청약"],["환불일","공모주 환불"],["상장일","공모주 상장"]].forEach(([f,t])=>{
+    if(r[f]){ const d=daysUntil(r[f]); if(d!=null&&d>=0&&d<=maxDays) events.push({date:r[f],d,type:t,color:"#7c5cd6",desc:`${r.종목||''}${r.주관사?' ('+r.주관사+')':''}`}); } }); });
   return events.sort((a,b)=>a.date.localeCompare(b.date));
 }
 /* 만기·납입 브라우저 알림 */
@@ -1610,7 +1672,7 @@ function applyRulesAll(){
 /* ========================== Firebase 브리지 ========================== */
 window.getLocalData = ()=>DATA;
 window.onCloudData = (d)=>{
-  DATA = Object.assign({동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],저축목표:[],스냅샷:[],반복:[],설정:{}}, d||{});
+  DATA = Object.assign({동산:[],부동산:[],투자자산:[],공모주:[],연금보험:[],대출:[],현금흐름:[],용돈:[],저축목표:[],스냅샷:[],반복:[],설정:{}}, d||{});
   localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
   render();
 };
