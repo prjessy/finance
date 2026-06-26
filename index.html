@@ -1224,10 +1224,12 @@ window.onAuthChange = (user)=>{ cloudUser=user; renderAuth(); };
 function renderAuth(){
   const box=document.getElementById("authbox"); if(!box) return;
   if(cloudUser){
-    box.innerHTML=`<span style="font-size:11.5px;opacity:.95">☁ ${esc(cloudUser.displayName||cloudUser.email||'로그인됨')}</span>
+    box.innerHTML=`<span style="font-size:11.5px;opacity:.95" title="클라우드에 저장되어 다른 기기에서도 동기화됩니다">☁ ${esc(cloudUser.displayName||cloudUser.email||'로그인됨')} · 동기화중</span>
       <button class="tool" onclick="fbLogout()">로그아웃</button>`;
   }else{
-    box.innerHTML=`<button class="tool" onclick="fbLogin()">☁ Google 로그인</button>`;
+    box.innerHTML=`<button class="tool" onclick="fbLogin()"
+      title="로그인하면 클라우드에 저장돼 폰·다른 PC에서도 보입니다(DB 주인은 콘솔에서 열람 가능). 로그인 안 하면 데이터는 이 기기에만 저장되어 아무도 볼 수 없습니다.">☁ Google 로그인</button>
+      <span style="font-size:10.5px;opacity:.8;max-width:170px;line-height:1.25">로그인=기기간 동기화 / 미로그인=내 기기에만 저장</span>`;
   }
 }
 function fbLogin(){ if(window.fb&&window.fb.ready) window.fb.signIn(); else toast("Firebase 로딩 중… 잠시 후 다시"); }
