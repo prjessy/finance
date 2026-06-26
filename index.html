@@ -669,8 +669,17 @@ function exportExcel(){
 
 /* ========================== 초기화 / 샘플 ========================== */
 function resetAll(){
-  if(!confirm("모든 데이터를 삭제할까요? (되돌릴 수 없습니다)")) return;
-  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],현금흐름:[]}; editId=null; save(); render(); toast("초기화 완료");
+  const hasData = Object.values(DATA).some(a=>a&&a.length);
+  const warn = cloudUser
+    ? "⚠️ 모든 데이터를 삭제합니다.\n로그인 상태이므로 클라우드(Firebase) 데이터도 함께 비워집니다.\n되돌릴 수 없습니다. 계속할까요?"
+    : "⚠️ 모든 데이터를 삭제합니다.\n되돌릴 수 없습니다. 계속할까요?";
+  if(!confirm(warn)) return;
+  // 안전장치: 데이터가 있으면 먼저 엑셀 백업 자동 저장
+  if(hasData){
+    try{ exportExcel(); }catch(e){ console.warn(e); }
+    if(!confirm("✅ 백업 엑셀을 내려받았습니다.\n이제 정말 모든 데이터를 삭제할까요?")) { toast("초기화 취소됨"); return; }
+  }
+  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],현금흐름:[]}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
 }
 function loadDemo(){
   if(DATA.동산.length||DATA.부동산.length) { if(!confirm("기존 데이터에 샘플을 추가할까요?")) return; }
