@@ -183,8 +183,9 @@
    ========================================================================= */
 
 const STORE_KEY = "assetSystem_v1";
-const VERSION = "1.7.0";
+const VERSION = "1.8.0";
 const RELEASE_NOTES = [
+  {v:"1.8.0", d:"목표별 저축통장(여러 목표), 연말정산 세액공제 추적(연금저축·IRP), 만기·납입 알림(브라우저), 일일 사용가능액"},
   {v:"1.7.0", d:"용돈관리 탭 — 사람별 월 용돈 설정·지급, 남은 용돈·사용 기록 관리"},
   {v:"1.6.0", d:"월간 리포트·인사이트, 금융 캘린더·현금흐름 예측, 지출 자동분류 규칙, 구독·정기결제 추적"},
   {v:"1.5.0", d:"대출·부채 탭, 자산배분 목표, 인쇄/PDF, 다크모드, 모바일 최적화"},
@@ -247,7 +248,7 @@ const EXPENSE_CATS = OPT.현금분류.filter(c=>!INCOME_CATS.includes(c));
 /* ---- 데이터 모델 ---- */
 let DATA = {
   동산:[], 부동산:[], 투자자산:[], 연금보험:[], 대출:[], 현금흐름:[],
-  용돈:[], 스냅샷:[], 반복:[], 설정:{}
+  용돈:[], 저축목표:[], 스냅샷:[], 반복:[], 설정:{}
 };
 let editId = null;       // 수정 모드에서 선택된 동산 id
 let curTab = "summary";
@@ -839,7 +840,7 @@ function resetAll(){
     try{ exportExcel(); }catch(e){ console.warn(e); }
     if(!confirm("✅ 백업 엑셀을 내려받았습니다.\n이제 정말 모든 데이터를 삭제할까요?")) { toast("초기화 취소됨"); return; }
   }
-  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
+  DATA={동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],저축목표:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
 }
 function loadDemo(){
   if(DATA.동산.length||DATA.부동산.length) { if(!confirm("기존 데이터에 샘플을 추가할까요?")) return; }
@@ -908,6 +909,13 @@ function loadDemo(){
   DATA.설정.순자산목표=1000000000;
   DATA.설정.예산={식비:800000,주거:1400000,교통:200000,통신:120000,여가:300000};
   DATA.설정.배분={동산:20,부동산:50,투자자산:20,연금보험:10};
+  // 저축 목표 샘플
+  const nextY=(m)=>{ const d=new Date(); d.setMonth(d.getMonth()+m); return d.toISOString().slice(0,10); };
+  DATA.저축목표.push(
+    {id:uid(),이름:"유럽여행",목표금액:5000000,현재금액:1800000,마감일:nextY(10)},
+    {id:uid(),이름:"비상금",목표금액:10000000,현재금액:6500000,마감일:nextY(18)},
+    {id:uid(),이름:"내집마련 종잣돈",목표금액:50000000,현재금액:12000000,마감일:nextY(36)}
+  );
   save(); render(); toast("🎲 샘플 데이터 추가됨");
 }
 
@@ -1184,6 +1192,100 @@ function setGoal(v){ DATA.설정=DATA.설정||{}; DATA.설정.순자산목표=v;
 function setBudget(cat,v){ DATA.설정=DATA.설정||{}; DATA.설정.예산=DATA.설정.예산||{}; DATA.설정.예산[cat]=v; save(); render(); }
 function setAlloc(k,v){ DATA.설정=DATA.설정||{}; DATA.설정.배분=DATA.설정.배분||{}; DATA.설정.배분[k]=v; save(); render(); }
 
+/* ---- 목표별 저축통장 ---- */
+function savingGoalsHTML(){
+  const goals=DATA.저축목표||[];
+  return `<div class="chartbox" style="margin-bottom:18px">
+    <div class="lbl">🏦 저축 목표 <button class="addbtn" style="margin-left:auto;padding:6px 12px" onclick="saveGoalForm()">＋ 목표 추가</button></div>
+    ${goals.length?`<div style="margin-top:12px">${goals.map(g=>{
+      const cur=num(g.현재금액), tg=num(g.목표금액), p=tg>0?Math.min(100,cur/tg*100):0;
+      const dleft=daysUntil(g.마감일), mleft=dleft!=null?Math.max(0,Math.ceil(dleft/30)):null;
+      const need=(tg>cur&&mleft)?Math.ceil((tg-cur)/mleft):0;
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+          <b>${esc(g.이름)}</b>
+          ${g.마감일?`<span style="color:var(--muted);font-size:11.5px">~${g.마감일} (D-${dleft})</span>`:''}
+          <span style="margin-left:auto;font-weight:700">${won(cur)} / ${won(tg)} (${p.toFixed(0)}%)</span>
+        </div>
+        <div class="bar" style="height:14px"><span style="width:${p.toFixed(1)}%;background:linear-gradient(90deg,#62c4dc,#2e9e6b)"></span></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px;font-size:11.5px;color:var(--muted);flex-wrap:wrap">
+          <span>${cur>=tg&&tg>0?'🎉 목표 달성!':(need?`월 ${won(need)}씩 모으면 마감일까지 달성`:'마감일을 정하면 월 필요액 계산')}</span>
+          <span style="margin-left:auto">현재금액 <input type="number" value="${g.현재금액??''}" onchange="updSaveGoal('${g.id}',this.value)" style="width:120px;padding:4px 6px;border:1px solid #c9d4dc;border-radius:5px;text-align:right"></span>
+          <span class="rowact" onclick="saveGoalForm('${g.id}')">수정</span>
+          <span class="rowdel" onclick="delSaveGoal('${g.id}')">삭제</span>
+        </div>
+      </div>`;
+    }).join("")}</div>`:'<p class="empty">저축 목표가 없습니다. (예: 유럽여행 200만, 비상금 1천만)</p>'}
+  </div>`;
+}
+function saveGoalForm(id){
+  const g=id?(DATA.저축목표||[]).find(x=>x.id===id)||{}:{};
+  openModal(`<h3>${id?'수정':'추가'} · 저축 목표</h3>
+    <div class="field"><label>목표 이름</label><input id="sg_이름" value="${esc(g.이름)}" placeholder="예: 유럽여행"></div>
+    <div class="field"><label>목표 금액</label><input id="sg_목표금액" type="number" value="${g.목표금액??''}" placeholder="2000000"></div>
+    <div class="field"><label>현재 금액</label><input id="sg_현재금액" type="number" value="${g.현재금액??''}" placeholder="0"></div>
+    <div class="field"><label>마감일</label><input id="sg_마감일" type="date" value="${esc(g.마감일)}"></div>
+    <div class="btnrow"><button class="btn save" onclick="saveSaveGoal('${id||''}')">💾 저장</button>
+      <button class="btn cancel" onclick="closeModal()">취소</button></div>`);
+}
+function saveSaveGoal(id){
+  const g=i=>document.getElementById("sg_"+i).value;
+  const o={이름:g("이름"),목표금액:g("목표금액"),현재금액:g("현재금액"),마감일:g("마감일")};
+  if(!o.이름){ toast("목표 이름을 입력하세요"); return; }
+  DATA.저축목표=DATA.저축목표||[];
+  if(id){ const i=DATA.저축목표.findIndex(x=>x.id===id); o.id=id; DATA.저축목표[i]=o; }
+  else { o.id=uid(); DATA.저축목표.push(o); }
+  save(); closeModal(); render(); toast("저축 목표 저장");
+}
+function updSaveGoal(id,v){ const g=(DATA.저축목표||[]).find(x=>x.id===id); if(g){ g.현재금액=v; save(); render(); } }
+function delSaveGoal(id){ if(!confirm("삭제할까요?"))return; DATA.저축목표=(DATA.저축목표||[]).filter(x=>x.id!==id); save(); render(); }
+
+/* ---- 연말정산 세액공제 (연금저축·IRP) ---- */
+function setBracket(v){ DATA.설정=DATA.설정||{}; DATA.설정.공제율구간=v; save(); render(); }
+function taxDeductionHTML(){
+  DATA.설정=DATA.설정||{};
+  const high=DATA.설정.공제율구간==="high", rate=high?0.132:0.165;
+  const ps=(DATA.연금보험||[]).filter(r=>r.종류==="연금저축").reduce((s,r)=>s+num(r.월납입)*12,0);
+  const irp=(DATA.연금보험||[]).filter(r=>r.종류==="IRP").reduce((s,r)=>s+num(r.월납입)*12,0);
+  const psRec=Math.min(ps,6000000), totRec=Math.min(psRec+irp,9000000);
+  const credit=Math.round(totRec*rate);
+  const psP=Math.min(100,ps/6000000*100), totP=Math.min(100,(ps+irp)/9000000*100);
+  return `<div class="chartbox" style="margin-bottom:18px">
+    <div class="lbl">🧾 연말정산 세액공제 (연금저축·IRP)
+      <select style="margin-left:auto;padding:5px 8px;border:1px solid #c9d4dc;border-radius:5px" onchange="setBracket(this.value)">
+        <option value="low" ${!high?'selected':''}>총급여 5,500만↓ (16.5%)</option>
+        <option value="high" ${high?'selected':''}>5,500만 초과 (13.2%)</option>
+      </select></div>
+    <div style="margin-top:12px">
+      <div class="goalrow" style="grid-template-columns:120px 1fr 170px"><span>연금저축</span>
+        <div class="bar"><span style="width:${psP}%;background:#e0a526"></span></div>
+        <span style="text-align:right">${won(ps)} / 600만</span></div>
+      <div class="goalrow" style="grid-template-columns:120px 1fr 170px"><span>합산(＋IRP)</span>
+        <div class="bar"><span style="width:${totP}%;background:#3b6fd6"></span></div>
+        <span style="text-align:right">${won(ps+irp)} / 900만</span></div>
+    </div>
+    <div style="margin-top:12px;padding-top:12px;border-top:2px solid var(--sky);display:flex;gap:22px;flex-wrap:wrap;font-weight:700">
+      <span>공제 인정액 ${won(totRec)}</span>
+      <span style="color:var(--green)">예상 절세액 ${won(credit)}</span>
+      <span style="color:var(--muted);font-weight:400">남은 납입여력 ${won(Math.max(0,9000000-(ps+irp)))}</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">연금보험 탭의 '연금저축/IRP' 월납입×12로 자동 계산. 한도: 연금저축 600만, IRP 포함 합산 900만.</div>
+  </div>`;
+}
+
+/* ---- 일일 사용가능액 ---- */
+function dailyBudgetHTML(totB,totA){
+  if(!(totB>0)) return "";
+  const now=new Date(), dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(), daysLeft=dim-now.getDate()+1;
+  const remain=totB-totA, daily=daysLeft>0?remain/daysLeft:remain, over=remain<0;
+  return `<div style="background:${over?'#fdeaee':'var(--sky-l)'};border-radius:8px;padding:12px 14px;margin:10px 0 14px;display:flex;gap:26px;flex-wrap:wrap;align-items:center">
+    <div><div style="font-size:11.5px;color:var(--muted)">오늘 쓸 수 있는 돈 (잔여예산 ÷ 남은 ${daysLeft}일)</div>
+      <div style="font-size:20px;font-weight:700;color:${over?'var(--red)':'var(--sky-d)'}">${over?'예산 초과':won(Math.floor(daily))}</div></div>
+    <div><div style="font-size:11.5px;color:var(--muted)">이번 달 남은 예산</div>
+      <div style="font-size:16px;font-weight:700;color:${over?'var(--red)':'var(--ink)'}">${won(remain)}</div></div>
+  </div>`;
+}
+
 /* ========================== 인쇄/PDF · 다크모드 ========================== */
 function printReport(){ if(curTab!=='summary') go('summary'); setTimeout(()=>window.print(),200); }
 function toggleDark(){
@@ -1200,7 +1302,9 @@ function rGoals(c){
   const totB=budgetCats.reduce((a,k)=>a+num(s.예산[k]),0), totA=budgetCats.reduce((a,k)=>a+(actual[k]||0),0);
   c.innerHTML=`
   <h2 class="sec">🎯 목표·예산</h2>
-  <p class="sub">순자산 목표와 월 지출 예산을 관리합니다.</p>
+  <p class="sub">저축 목표·순자산 목표·예산·세액공제를 한 곳에서 관리합니다.</p>
+
+  ${savingGoalsHTML()}
 
   <div class="chartbox" style="margin-bottom:18px">
     <div class="lbl">🏁 순자산 목표</div>
@@ -1213,8 +1317,11 @@ function rGoals(c){
     <div style="font-size:12px;color:var(--muted);margin-top:6px">달성률 <b style="color:var(--sky-d)">${gp.toFixed(1)}%</b> · 남은 금액 ${eok(Math.max(0,target-t.순자산))}</div>`:'<div style="font-size:12px;color:var(--muted);margin-top:8px">목표 금액을 입력하면 달성률이 표시됩니다.</div>'}
   </div>
 
+  ${taxDeductionHTML()}
+
   <div class="chartbox">
     <div class="lbl">💰 이번 달 예산 (${ym}) — 분류별로 예산을 입력하세요</div>
+    ${dailyBudgetHTML(totB,totA)}
     <div style="margin-top:14px">
       ${EXPENSE_CATS.map(k=>{
         const b=num(s.예산[k]), a=actual[k]||0, p=b>0?Math.min(100,a/b*100):0, over=b>0&&a>b;
@@ -1401,15 +1508,39 @@ function rReport(c){
 }
 
 /* ========================== 금융 캘린더 / 현금흐름 예측 ========================== */
-function rCalendar(c){
+function collectEvents(maxDays){
   const events=[];
   DATA.동산.forEach(r=>{ const m=maturityCalc(r); if(m.matDate){ const d=daysUntil(m.matDate);
-    if(d!=null&&d>=0&&d<=180) events.push({date:m.matDate,d,type:"예적금 만기",color:"var(--sky-d)",desc:`${r.금융기관||''} ${r.투자구분||''} (${won(m.net)})`}); }});
+    if(d!=null&&d>=0&&d<=maxDays) events.push({date:m.matDate,d,type:"예적금 만기",color:"var(--sky-d)",desc:`${r.금융기관||''} ${r.투자구분||''} (${won(m.net)})`}); }});
   (DATA.대출||[]).forEach(r=>{ if(r.만기일){ const d=daysUntil(r.만기일);
-    if(d!=null&&d>=0&&d<=180) events.push({date:r.만기일,d,type:"대출 만기",color:"var(--red)",desc:`${r.금융기관||''} ${r.종류||''} (잔액 ${won(r.잔액)})`}); }});
+    if(d!=null&&d>=0&&d<=maxDays) events.push({date:r.만기일,d,type:"대출 만기",color:"var(--red)",desc:`${r.금융기관||''} ${r.종류||''} (잔액 ${won(r.잔액)})`}); }});
   (DATA.반복||[]).forEach(r=>{ for(let k=0;k<3;k++){ const ym=ymOffset(k), day=String(r.일||1).padStart(2,'0'), date=ym+"-"+day, d=daysUntil(date);
-    if(d!=null&&d>=0&&d<=180) events.push({date,d,type:r.구분==="수입"?"수입 예정":"지출 예정",color:r.구분==="수입"?"var(--green)":"var(--amber)",desc:`${r.내용||''} (${won(r.금액)})`}); }});
-  events.sort((a,b)=>a.date.localeCompare(b.date));
+    if(d!=null&&d>=0&&d<=maxDays) events.push({date,d,type:r.구분==="수입"?"수입 예정":"지출 예정",color:r.구분==="수입"?"var(--green)":"var(--amber)",desc:`${r.내용||''} (${won(r.금액)})`}); }});
+  return events.sort((a,b)=>a.date.localeCompare(b.date));
+}
+/* 만기·납입 브라우저 알림 */
+function remindOn(){ return ("Notification" in window) && Notification.permission==="granted" && localStorage.getItem("remind")==="on"; }
+function toggleReminders(){
+  if(!("Notification" in window)){ alert("이 브라우저는 알림을 지원하지 않습니다."); return; }
+  if(remindOn()){ localStorage.setItem("remind","off"); toast("🔕 알림 꺼짐"); render(); return; }
+  Notification.requestPermission().then(p=>{
+    if(p==="granted"){ localStorage.setItem("remind","on"); toast("🔔 알림 켜짐 — 7일 내 일정 알려드려요"); checkReminders(true); render(); }
+    else toast("알림 권한이 거부되었습니다");
+  });
+}
+function checkReminders(force){
+  if(!remindOn()) return;
+  const today=new Date().toISOString().slice(0,10);
+  const log=JSON.parse(localStorage.getItem("remindLog")||"{}");
+  collectEvents(7).forEach(e=>{
+    const key=e.type+"|"+e.date+"|"+e.desc;
+    if(log[key]===today && !force) return;
+    try{ new Notification("💠 자산관리 알림",{body:`[D-${e.d}] ${e.type}: ${e.desc} · ${e.date}`}); log[key]=today; }catch(_){}
+  });
+  localStorage.setItem("remindLog",JSON.stringify(log));
+}
+function rCalendar(c){
+  const events=collectEvents(180);
   const recInc=(DATA.반복||[]).filter(r=>r.구분==="수입").reduce((s,r)=>s+num(r.금액),0);
   const recExp=(DATA.반복||[]).filter(r=>r.구분==="지출").reduce((s,r)=>s+num(r.금액),0);
   const monthlyNet=recInc-recExp;
@@ -1418,6 +1549,8 @@ function rCalendar(c){
   c.innerHTML=`
   <h2 class="sec">📅 금융 캘린더 · 현금흐름 예측</h2>
   <p class="sub">앞으로 6개월 내 만기·상환·반복거래 일정과 잔액 전망</p>
+  <div class="toolbar"><button class="addbtn" onclick="toggleReminders()" style="${remindOn()?'background:var(--green)':''}">${remindOn()?'🔔 알림 켜짐 (끄기)':'🔕 알림 켜기'}</button>
+    <span style="color:var(--muted);font-size:11.5px">7일 내 만기·상환·반복거래를 브라우저 알림으로 (앱 접속 시)</span></div>
   <div class="grid2">
     <div class="chartbox"><div class="lbl">📌 다가오는 일정 (180일 내)</div>
       ${events.length?`<div style="margin-top:8px">${events.map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
@@ -1475,7 +1608,7 @@ function applyRulesAll(){
 /* ========================== Firebase 브리지 ========================== */
 window.getLocalData = ()=>DATA;
 window.onCloudData = (d)=>{
-  DATA = Object.assign({동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],스냅샷:[],반복:[],설정:{}}, d||{});
+  DATA = Object.assign({동산:[],부동산:[],투자자산:[],연금보험:[],대출:[],현금흐름:[],용돈:[],저축목표:[],스냅샷:[],반복:[],설정:{}}, d||{});
   localStorage.setItem(STORE_KEY, JSON.stringify(DATA));
   render();
 };
@@ -1503,6 +1636,7 @@ if(["동산","부동산","투자자산","연금보험"].some(k=>(DATA[k]||[]).le
 }
 renderTabs(); render(); renderAuth();
 document.getElementById("verbadge").textContent = "v"+VERSION+" · 릴리즈 노트";
+checkReminders();
 </script>
 
 <!-- ===== Firebase 연동 (Google 로그인 + Firestore 실시간 동기화) ===== -->
