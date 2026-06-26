@@ -168,6 +168,7 @@
   <h1>🗺️ 머니맵 <span style="font-size:12px;font-weight:600;opacity:.85">MoneyMap</span></h1>
   <span id="verbadge" style="font-size:11px;opacity:.9;cursor:pointer;background:rgba(255,255,255,.18);padding:3px 8px;border-radius:10px" onclick="showReleaseNotes()" title="릴리즈 노트 보기"></span>
   <span class="spacer"></span>
+  <button class="tool" onclick="openSearch()">🔍 통합검색</button>
   <button class="tool" onclick="document.getElementById('xlsxfile').click()">📥 엑셀 가져오기</button>
   <button class="tool" onclick="exportExcel()">📤 엑셀 백업</button>
   <button class="tool" onclick="loadDemo()">🎲 샘플 데이터</button>
@@ -192,8 +193,9 @@
    ========================================================================= */
 
 const STORE_KEY = "assetSystem_v1";
-const VERSION = "1.9.3";
+const VERSION = "1.10.0";
 const RELEASE_NOTES = [
+  {v:"1.10.0", d:"투자 수익률·연환산(CAGR), 통합검색(전체 탭), 리포트 전년 동월 대비·올해 기부금 합계"},
   {v:"1.9.3", d:"현금흐름 분류에 기부/헌금·경조사 추가, 앱 이름 머니맵(MoneyMap)"},
   {v:"1.9.2", d:"탭 그룹화(2단 메뉴: 대시보드·자산·가계부·분석) — 모바일에서 보기 편하게"},
   {v:"1.9.1", d:"현금흐름에 '구독'·'용돈' 분류 추가(AI·넷플릭스 구독 기록), 요약→대시보드 명칭, 용돈관리 탭 정리, 빈 데이터 안내"},
@@ -656,27 +658,41 @@ function rLoans(c){
 }
 
 /* ---------- 투자자산 ---------- */
+function cagrOf(r,buy,now){
+  if(!(r.매입일)||!(buy>0)||!(now>0)) return null;
+  const yrs=(Date.now()-new Date(r.매입일))/(365.25*86400000);
+  if(isNaN(yrs)||yrs<=0.02) return null;
+  return Math.pow(now/buy,1/yrs)-1;
+}
 function rInvest(c){
   const cat="투자자산";
   const rows=processRows(cat,DATA.투자자산);
   const calc=r=>({매입:num(r.매입가)*num(r.수량), 평가:(num(r.현재가)*num(r.수량))||num(r.평가금액)});
   const tBuy=rows.reduce((s,r)=>s+calc(r).매입,0), tNow=rows.reduce((s,r)=>s+calc(r).평가,0);
+  const tRet=tBuy>0?(tNow-tBuy)/tBuy*100:0;
   c.innerHTML=`
   <h2 class="sec">📈 투자자산</h2>
-  <p class="sub">주식·펀드·ETF·코인 등 투자 포트폴리오.</p>
+  <p class="sub">주식·펀드·ETF·코인 등 투자 포트폴리오. 수익률·연환산(CAGR) 자동 계산.</p>
+  <div class="cards">
+    <div class="card"><div class="lbl">평가금액</div><div class="val">${eok(tNow)}</div><div class="delta">매입 ${eok(tBuy)}</div></div>
+    <div class="card"><div class="lbl">총 손익</div><div class="val" style="color:${tNow-tBuy>=0?'var(--green)':'var(--red)'}">${tNow-tBuy>=0?'+':''}${eok(tNow-tBuy)}</div><div class="delta">실현 전 평가손익</div></div>
+    <div class="card"><div class="lbl">총 수익률</div><div class="val" style="color:${tRet>=0?'var(--green)':'var(--red)'}">${tRet>=0?'+':''}${tRet.toFixed(1)}%</div><div class="delta">${rows.length}종목</div></div>
+  </div>
   <div class="toolbar"><button class="addbtn" onclick="genForm('투자자산')">＋ 종목 추가</button>${tbUpload("투자자산")}${searchBar(cat)}</div>
   ${rows.length?`<div class="tablewrap"><table>
     <thead><tr>${sTh(cat,"종류","종류")}${sTh(cat,"종목명","종목명")}${sTh(cat,"계좌","계좌")}${sTh(cat,"명의자","명의자")}${sTh(cat,"수량","수량","num")}
-      ${sTh(cat,"매입가","매입가","num")}${sTh(cat,"현재가","현재가","num")}<th class="num">평가금액</th><th class="num">손익</th><th></th></tr></thead>
-    <tbody>${rows.map(r=>{const k=calc(r);const pl=k.평가-k.매입;return `<tr>
+      ${sTh(cat,"매입가","매입가","num")}${sTh(cat,"현재가","현재가","num")}<th class="num">평가금액</th><th class="num">손익</th><th class="num">수익률</th><th></th></tr></thead>
+    <tbody>${rows.map(r=>{const k=calc(r);const pl=k.평가-k.매입;const ret=k.매입?pl/k.매입*100:0;const cg=cagrOf(r,k.매입,k.평가);return `<tr>
       <td>${esc(r.종류)}</td><td>${esc(r.종목명)}</td><td>${esc(r.계좌)}</td><td>${esc(r.명의자)}</td>
       <td class="num">${esc(r.수량)}</td><td class="num">${won(r.매입가)}</td><td class="num">${won(r.현재가)}</td>
       <td class="num">${won(k.평가)}</td>
-      <td class="num" style="color:${pl>=0?'var(--green)':'var(--red)'};font-weight:700">${pl>=0?'+':''}${won(pl)}${k.매입?` (${(pl/k.매입*100).toFixed(1)}%)`:''}</td>
+      <td class="num" style="color:${pl>=0?'var(--green)':'var(--red)'};font-weight:700">${pl>=0?'+':''}${won(pl)}</td>
+      <td class="num" style="color:${ret>=0?'var(--green)':'var(--red)'};font-weight:700">${k.매입?(ret>=0?'+':'')+ret.toFixed(1)+'%':'-'}${cg!=null?`<br><span style="font-size:10px;color:var(--muted)">연 ${(cg*100>=0?'+':'')}${(cg*100).toFixed(1)}%</span>`:''}</td>
       <td><span class="rowact" onclick="genForm('투자자산','${r.id}')">수정</span><span class="rowdel" onclick="delRow('투자자산','${r.id}')">삭제</span></td>
     </tr>`;}).join("")}</tbody>
     <tfoot><tr><td colspan="7">합계 ${rows.length}종목</td><td class="num">${won(tNow)}</td>
-      <td class="num" style="color:${tNow-tBuy>=0?'var(--green)':'var(--red)'}">${tNow-tBuy>=0?'+':''}${won(tNow-tBuy)}</td><td></td></tr></tfoot>
+      <td class="num" style="color:${tNow-tBuy>=0?'var(--green)':'var(--red)'}">${tNow-tBuy>=0?'+':''}${won(tNow-tBuy)}</td>
+      <td class="num" style="color:${tRet>=0?'var(--green)':'var(--red)'}">${tRet>=0?'+':''}${tRet.toFixed(1)}%</td><td></td></tr></tfoot>
     </table></div>`:emptyBox("투자자산이 없습니다.")}`;
 }
 
@@ -775,7 +791,7 @@ const FORMDEF = {
   부동산:[["종류","select","부동산종류"],["소재지","text"],["명의자","select","명의자"],
     ["취득가","number"],["현재가","number"],["대출","number"],["취득일","date"],["메모","textarea"]],
   투자자산:[["종류","select","투자종류"],["종목명","text"],["계좌","text"],["명의자","select","명의자"],
-    ["수량","number"],["매입가","number"],["현재가","number"],["평가금액","number"],["메모","textarea"]],
+    ["수량","number"],["매입가","number"],["현재가","number"],["평가금액","number"],["매입일","date"],["메모","textarea"]],
   연금보험:[["종류","select","연금종류"],["상품명","text"],["보험사","text"],["명의자","select","명의자"],
     ["월납입","number"],["납입기간","text"],["납입누계","number"],["예상수령액","number"],["개시일","date"],["메모","textarea"]],
   현금흐름:[["일자","date"],["구분","select","현금구분"],["분류","select","현금분류"],["내용","text"],
@@ -1571,6 +1587,9 @@ function rReport(c){
   const snaps=(DATA.스냅샷||[]), last=snaps[snaps.length-1], prevS=snaps[snaps.length-2];
   const assetDelta=(last&&prevS)?num(last.순자산)-num(prevS.순자산):null;
   const subs=subscriptions(), subM=subs.reduce((s,x)=>s+num(x.월금액),0);
+  const prevY=ymOffset(-12), Y=monthAgg(prevY), yoyExp=A.exp-Y.exp;
+  const year=new Date().toISOString().slice(0,4);
+  const donation=DATA.현금흐름.filter(r=>r.구분==="지출"&&r.분류==="기부/헌금"&&(r.일자||"").startsWith(year)).reduce((s,r)=>s+num(r.금액),0);
   c.innerHTML=`
   <h2 class="sec">📊 월간 리포트</h2>
   <p class="sub">이번 달(${cur}) vs 지난 달(${prev}) 비교 · 인사이트</p>
@@ -1580,6 +1599,8 @@ function rReport(c){
     <div class="card"><div class="lbl">순흐름(저축)</div><div class="val">${A.net>=0?'+':''}${eok(A.net)}</div><div class="delta">${deltaTxt(A.net-B.net)}</div></div>
     <div class="card"><div class="lbl">저축률</div><div class="val" style="color:${sr>=0?'var(--sky-d)':'var(--red)'}">${sr.toFixed(0)}%</div><div class="delta">전월 ${srPrev.toFixed(0)}%</div></div>
     <div class="card"><div class="lbl">자산 증감(전월 스냅샷)</div><div class="val">${assetDelta==null?'-':(assetDelta>=0?'+':'')+eok(assetDelta)}</div><div class="delta">${assetDelta==null?'스냅샷 2개 이상 필요':'순자산 변화'}</div></div>
+    <div class="card"><div class="lbl">전년 동월 대비 지출</div><div class="val">${eok(A.exp)}</div><div class="delta">${deltaTxt(yoyExp,true)} vs ${prevY}</div></div>
+    <div class="card"><div class="lbl">올해 기부금 (${year})</div><div class="val">${eok(donation)}</div><div class="delta">연말정산 기부금 공제용</div></div>
   </div>
   <div class="grid2">
     <div class="chartbox"><div class="lbl">💸 이번 달 지출 Top</div>
@@ -1697,6 +1718,38 @@ function delRule(i){ DATA.설정.분류규칙.splice(i,1); save(); manageRules()
 function applyRulesAll(){
   let n=0; DATA.현금흐름.forEach(r=>{ if(r.구분!=="수입"){ const m=autoCat(r.내용); if(m && r.분류!==m){ r.분류=m; n++; } } });
   save(); closeModal(); render(); toast(`🏷 ${n}건 분류 적용됨`);
+}
+
+/* ========================== 통합 검색 ========================== */
+const SEARCH_SCOPE = {
+  동산:{tab:"dongsan",label:r=>`${r.금융기관||''} ${r.투자구분||''} · ${won(r.예치금액)} (${r.명의자||''})`},
+  부동산:{tab:"budongsan",label:r=>`${r.종류||''} ${r.소재지||''} · ${won(r.현재가)}`},
+  투자자산:{tab:"invest",label:r=>`${r.종목명||''} ${r.종류||''} · ${won((num(r.현재가)*num(r.수량))||num(r.평가금액))}`},
+  공모주:{tab:"ipo",label:r=>`${r.종목||''} ${r.주관사||''} · 청약 ${r.청약일||'-'}`},
+  연금보험:{tab:"pension",label:r=>`${r.상품명||''} ${r.보험사||''} (${r.종류||''})`},
+  대출:{tab:"loans",label:r=>`${r.종류||''} ${r.금융기관||''} · 잔액 ${won(r.잔액)}`},
+  현금흐름:{tab:"cashflow",label:r=>`${r.일자||''} [${r.분류||''}] ${r.내용||''} · ${won(r.금액)}`},
+};
+function openSearch(){
+  openModal(`<h3>🔍 통합 검색</h3>
+    <input id="gsq" placeholder="금융기관·종목·내용·명의자 등 무엇이든" oninput="runGlobalSearch(this.value)"
+      style="width:100%;padding:9px 11px;border:1px solid #c9d4dc;border-radius:6px;font-size:13px">
+    <div id="gsres" style="margin-top:12px;max-height:55vh;overflow:auto"><p class="empty">검색어를 입력하세요.</p></div>`);
+  setTimeout(()=>{ const el=document.getElementById("gsq"); if(el) el.focus(); },60);
+}
+function runGlobalSearch(q){
+  const box=document.getElementById("gsres"); if(!box) return;
+  q=(q||"").trim().toLowerCase();
+  if(!q){ box.innerHTML='<p class="empty">검색어를 입력하세요.</p>'; return; }
+  let html="", total=0;
+  Object.entries(SEARCH_SCOPE).forEach(([cat,cfg])=>{
+    const hits=(DATA[cat]||[]).filter(r=>Object.values(r).some(v=>String(v).toLowerCase().includes(q)));
+    if(!hits.length) return; total+=hits.length;
+    html+=`<div style="font-weight:700;color:var(--sky-d);margin:10px 0 4px">${cat} (${hits.length})</div>`;
+    html+=hits.slice(0,15).map(r=>`<div style="padding:7px 8px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px" onclick="go('${cfg.tab}');closeModal()">${esc(cfg.label(r))}</div>`).join("");
+    if(hits.length>15) html+=`<div style="font-size:11px;color:var(--muted);padding:4px 8px">…외 ${hits.length-15}건 (${cat} 탭에서 검색)</div>`;
+  });
+  box.innerHTML = total? html : '<p class="empty">검색 결과가 없습니다.</p>';
 }
 
 /* ========================== Firebase 브리지 ========================== */
