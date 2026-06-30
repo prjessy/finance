@@ -174,8 +174,9 @@
   <button class="tool" onclick="loadDemo()">🎲 샘플 데이터</button>
   <button class="tool" onclick="printReport()">🖨 인쇄/PDF</button>
   <button class="tool" onclick="toggleDark()" title="다크모드">🌙</button>
-  <button class="tool warn" onclick="resetAll()">🗑 초기화</button>
   <span id="authbox" style="display:flex;align-items:center;gap:8px"></span>
+  <span style="width:1px;height:22px;background:rgba(255,255,255,.3);margin:0 4px"></span>
+  <button class="tool warn" style="opacity:.7" onclick="resetAll()" title="모든 데이터 삭제 (주의)">🗑 초기화</button>
   <input type="file" id="xlsxfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcel(event)">
   <input type="file" id="catfile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importCategoryFile(event)">
 </header>
@@ -193,8 +194,9 @@
    ========================================================================= */
 
 const STORE_KEY = "assetSystem_v1";
-const VERSION = "1.10.0";
+const VERSION = "1.10.1";
 const RELEASE_NOTES = [
+  {v:"1.10.1", d:"초기화 버튼 위치 분리·톤다운(오클릭 방지), 초기화 시 백업 먼저 자동저장 후 'Y' 직접 입력 확인"},
   {v:"1.10.0", d:"투자 수익률·연환산(CAGR), 통합검색(전체 탭), 리포트 전년 동월 대비·올해 기부금 합계"},
   {v:"1.9.3", d:"현금흐름 분류에 기부/헌금·경조사 추가, 앱 이름 머니맵(MoneyMap)"},
   {v:"1.9.2", d:"탭 그룹화(2단 메뉴: 대시보드·자산·가계부·분석) — 모바일에서 보기 편하게"},
@@ -921,15 +923,16 @@ function exportExcel(){
 /* ========================== 초기화 / 샘플 ========================== */
 function resetAll(){
   const hasData = Object.values(DATA).some(a=>a&&a.length);
-  const warn = cloudUser
-    ? "⚠️ 모든 데이터를 삭제합니다.\n로그인 상태이므로 클라우드(Firebase) 데이터도 함께 비워집니다.\n되돌릴 수 없습니다. 계속할까요?"
-    : "⚠️ 모든 데이터를 삭제합니다.\n되돌릴 수 없습니다. 계속할까요?";
-  if(!confirm(warn)) return;
   // 안전장치: 데이터가 있으면 먼저 엑셀 백업 자동 저장
   if(hasData){
     try{ exportExcel(); }catch(e){ console.warn(e); }
-    if(!confirm("✅ 백업 엑셀을 내려받았습니다.\n이제 정말 모든 데이터를 삭제할까요?")) { toast("초기화 취소됨"); return; }
   }
+  const warn = cloudUser
+    ? "⚠️ 모든 데이터를 삭제합니다.\n로그인 상태이므로 클라우드(Firebase) 데이터도 함께 비워집니다.\n되돌릴 수 없습니다.\n"
+    : "⚠️ 모든 데이터를 삭제합니다.\n되돌릴 수 없습니다.\n";
+  const backupMsg = hasData ? "✅ 백업 엑셀을 자동 저장했습니다.\n" : "";
+  const ans = prompt(warn + backupMsg + "\n정말 삭제하려면 Y 를 입력하세요:");
+  if(ans===null || ans.trim().toUpperCase()!=="Y"){ toast("초기화 취소됨"); return; }
   DATA={동산:[],부동산:[],투자자산:[],공모주:[],연금보험:[],대출:[],현금흐름:[],용돈:[],저축목표:[],스냅샷:[],반복:[],설정:{}}; editId=null; save(); render(); toast("초기화 완료 (백업 파일 보관됨)");
 }
 function loadDemo(){
